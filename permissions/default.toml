@@ -1,0 +1,29 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+# DotenvX GUI permissions
+
+This configuration allows the dotenvx GUI to read directories and files
+from anywhere on the system to scan for .env files and manage them.
+
+### Granted Permissions
+
+- fs:allow-read-dir: Read directories anywhere on the system
+- fs:allow-read-file: Read files anywhere on the system  
+- fs:allow-exists: Check if files/directories exist
+- dialog:default: Open file/folder selection dialogs
+
+"""
+permissions = [
+  "fs:allow-read",
+  "fs:allow-read-text-file",
+  "fs:allow-read-dir",
+  "fs:allow-read-file", 
+  "fs:allow-exists",
+  "fs:allow-app-read",
+  "dialog:default"
+]
+
+[allowlist.fs]
+read_text_file = true
