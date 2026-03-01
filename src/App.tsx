@@ -23,7 +23,7 @@ function App() {
 
       if (state.selectedProjectId) {
         const selectedProj = state.projects.find(
-          (p) => p.id === state.selectedProjectId
+          (p) => p.id === state.selectedProjectId,
         );
         setSelectedProject(selectedProj || null);
       }
@@ -41,10 +41,15 @@ function App() {
 
   const handleProjectUpdate = async (updatedProject: Project) => {
     await StorageManager.saveProject(updatedProject);
+    setSelectedProject((prev) => {
+      if (prev?.id === updatedProject.id) {
+        return updatedProject;
+      }
+      return prev;
+    });
     setProjects((prev) =>
-      prev.map((p) => (p.id === updatedProject.id ? updatedProject : p))
+      prev.map((p) => (p.id === updatedProject.id ? updatedProject : p)),
     );
-    setSelectedProject(updatedProject);
   };
 
   if (isLoading) {
@@ -66,7 +71,7 @@ function App() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden pt-16">
+      <div className="flex flex-1 overflow-hidden pt-15">
         {/* Sidebar */}
         <aside className="w-80 border-r bg-sidebar">
           <ProjectSelector

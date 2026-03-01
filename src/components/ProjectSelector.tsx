@@ -4,7 +4,7 @@ import { Project } from "../types";
 import { StorageManager } from "../storage";
 import { FileScanner } from "../utils/fileScanner";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { RefreshCw, Trash2, Plus } from "lucide-react";
 
@@ -66,7 +66,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 
   const handleDeleteProject = async (
     projectId: string,
-    event: React.MouseEvent
+    event: React.MouseEvent,
   ) => {
     event.stopPropagation();
     if (confirm("Are you sure you want to remove this project?")) {
@@ -82,7 +82,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 
   const handleRefreshProject = async (
     project: Project,
-    event: React.MouseEvent
+    event: React.MouseEvent,
   ) => {
     event.stopPropagation();
     setIsScanning(true);
@@ -98,10 +98,6 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       await StorageManager.saveProject(updatedProject);
       const updatedState = await StorageManager.loadState();
       onProjectsUpdate(updatedState.projects);
-
-      if (selectedProjectId === project.id) {
-        onProjectSelect(updatedProject);
-      }
     } catch (error) {
       console.error("Failed to refresh project:", error);
     }
@@ -110,7 +106,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   };
 
   return (
-    <div className="p-6">
+    <div className="flex flex-col h-full p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-sidebar-foreground">
           Projects
@@ -127,7 +123,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         </Button>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 flex-1 overflow-y-auto">
         {projects.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
@@ -143,19 +139,19 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           projects.map((project) => (
             <Card
               key={project.id}
-              className={`cursor-pointer transition-all hover:shadow-md ${
+              className={`cursor-pointer transition-all hover:shadow-md py-5 ${
                 selectedProjectId === project.id
-                  ? "ring-2 ring-primary bg-accent/50"
+                  ? "bg-accent/50"
                   : "hover:bg-accent/20"
               }`}
               onClick={() => onProjectSelect(project)}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
+              <CardContent>
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="text-base truncate">
+                    <h3 className="font-semibold text-base truncate">
                       {project.name}
-                    </CardTitle>
+                    </h3>
                     <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
                       {project.path}
                     </p>
@@ -166,7 +162,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                       </Badge>
                     </div>
                   </div>
-                  <div className="flex gap-1 ml-2">
+                  <div className="flex gap-1 flex-shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -188,10 +184,24 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                     </Button>
                   </div>
                 </div>
-              </CardHeader>
+              </CardContent>
             </Card>
           ))
         )}
+      </div>
+
+      <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">
+        <p>
+          Made by{" "}
+          <a
+            href="https://x.com/TwanLuttik"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors underline"
+          >
+            TwanLuttik
+          </a>
+        </p>
       </div>
     </div>
   );

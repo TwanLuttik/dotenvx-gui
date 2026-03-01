@@ -1,0 +1,169 @@
+# Name of the GitHub Actions workflow
+name: Build and Deploy
+
+# Trigger the workflow on push to the specified branch
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/build-and-deploy.yml"
+
+# Define the jobs to be run
+jobs:
+  # Setup job - shared dependencies
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+  # macOS builds (Silicon, Intel, Universal)
+  build-macos:
+    needs: setup
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            name: silicon
+            rustup_cmd: rustup target add aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            name: intel
+            rustup_cmd: rustup target add x86_64-apple-darwin
+          - target: universal-apple-darwin
+            name: universal
+            rustup_cmd: "rustup target add aarch64-apple-darwin && rustup target add x86_64-apple-darwin"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20.x"
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Add target architecture
+        run: ${{ matrix.rustup_cmd }}
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build for macOS ${{ matrix.name }}
+        run: bun run clean-target && bun run tauri build --target ${{ matrix.target }}
+
+      - name: Archive macOS ${{ matrix.name }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  # Windows build
+  build-windows:
+    needs: setup
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20.x"
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: x86_64-pc-windows-msvc
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build for Windows
+        run: bun run clean-target && bun run tauri build --target x86_64-pc-windows-msvc
+
+      - name: Archive Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # Define the release job which depends on all build jobs
+  release:
+    needs: [build-macos, build-windows]
+    # Specify the runner environment
+    runs-on: ubuntu-latest
+
+    # Define the steps to be performed in the release job
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f -name "*.dmg" -o -name "*.exe"
+          ls -la artifacts/
+
+      - name: Generate tag
+        id: generate_tag
+        run: echo "tag=release-$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create GitHub Release and Upload Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.generate_tag.outputs.tag }}"
+          echo "Creating release with tag: $TAG"
+
+          # Collect all artifacts
+          ASSETS=()
+          for file in artifacts/macos-silicon/*.dmg artifacts/macos-intel/*.dmg artifacts/macos-universal/*.dmg artifacts/windows/*.exe; do
+            if [ -f "$file" ]; then
+              ASSETS+=("$file")
+              echo "Found asset: $file"
+            fi
+          done
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "ERROR: No artifacts found!"
+            exit 1
+          fi
+
+          # Create release with all assets
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --draft=false \
+            --prerelease=false \
+            "${ASSETS[@]}"
+
+          echo "Release created successfully with ${#ASSETS[@]} assets"
