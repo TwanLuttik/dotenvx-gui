@@ -21,7 +21,8 @@ export class FileScanner {
           const filePath = `${projectPath}/${fileName}`;
 
           // Check for .env files (including .env.local, .env.production, etc.)
-          if (fileName.startsWith(".env")) {
+          // Exclude .env-backups.db which is a SQLite database file
+          if (fileName.startsWith(".env") && !fileName.endsWith(".db")) {
             const envFile: EnvFile = {
               id: `${projectPath}-${entry.name}`,
               name: entry.name,
@@ -103,7 +104,7 @@ export class FileScanner {
 
   private static validateKeysAgainstExample(
     envFiles: EnvFile[],
-    exampleFile: EnvFile
+    exampleFile: EnvFile,
   ): EnvFile[] {
     const exampleKeys = new Set(exampleFile.variables.map((v) => v.key));
 
@@ -114,10 +115,10 @@ export class FileScanner {
 
       const fileKeys = new Set(file.variables.map((v) => v.key));
       const missingKeys = Array.from(exampleKeys).filter(
-        (key) => !fileKeys.has(key)
+        (key) => !fileKeys.has(key),
       );
       const extraKeys = Array.from(fileKeys).filter(
-        (key) => !exampleKeys.has(key)
+        (key) => !exampleKeys.has(key),
       );
 
       return {

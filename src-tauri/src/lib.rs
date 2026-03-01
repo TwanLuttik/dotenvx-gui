@@ -2,6 +2,11 @@ use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use tauri::Manager;
+
+mod backup;
+use backup::{BackupManager, Backup, BackupMetadata};
 
 #[derive(Serialize, Deserialize)]
 struct DirEntry {
@@ -230,13 +235,186 @@ async fn rotate_key(keys_file_path: String, key_name: String) -> Result<String, 
     }
 }
 
+fn get_backup_db_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))
+}
+
+#[tauri::command]
+async fn create_backup(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    file_path: String,
+    content: String,
+    password: Option<String>,
+) -> Result<Backup, String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .create_backup(project_id, file_path, content, password)
+        .map_err(|e| format!("Failed to create backup: {}", e))
+}
+
+#[tauri::command]
+async fn get_backup(
+    app_handle: tauri::AppHandle,
+    backup_id: String,
+    password: Option<String>,
+) -> Result<Option<Backup>, String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .get_backup(&backup_id, password)
+        .map_err(|e| format!("Failed to get backup: {}", e))
+}
+
+#[tauri::command]
+async fn list_backups(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+) -> Result<Vec<BackupMetadata>, String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .list_backups(&project_id)
+        .map_err(|e| format!("Failed to list backups: {}", e))
+}
+
+#[tauri::command]
+async fn delete_backup(
+    app_handle: tauri::AppHandle,
+    backup_id: String,
+) -> Result<(), String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .delete_backup(&backup_id)
+        .map_err(|e| format!("Failed to delete backup: {}", e))
+}
+
+#[tauri::command]
+async fn delete_all_backups(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+) -> Result<(), String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .delete_all_backups(&project_id)
+        .map_err(|e| format!("Failed to delete all backups: {}", e))
+}
+
+#[tauri::command]
+async fn get_backup_count(app_handle: tauri::AppHandle) -> Result<i64, String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .get_backup_count()
+        .map_err(|e| format!("Failed to get backup count: {}", e))
+}
+
+#[tauri::command]
+async fn get_database_size(app_handle: tauri::AppHandle) -> Result<i64, String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .get_database_size()
+        .map_err(|e| format!("Failed to get database size: {}", e))
+}
+
+#[tauri::command]
+async fn reset_backup_database(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let db_path = get_backup_db_path(&app_handle)?;
+    let manager = BackupManager::new(db_path)
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .reset_database()
+        .map_err(|e| format!("Failed to reset database: {}", e))
+}
+
+#[tauri::command]
+async fn get_app_data_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))
+        .and_then(|path| {
+            path.to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "Failed to convert path to string".to_string())
+        })
+}
+
+#[tauri::command]
+async fn get_home_dir() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("USERPROFILE").map_err(|_| "Failed to get USERPROFILE directory".to_string())
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())
+    }
+}
+
+#[tauri::command]
+async fn debug_get_all_backups(db_path: String) -> Result<Vec<BackupMetadata>, String> {
+    let manager = BackupManager::new(PathBuf::from(&db_path))
+        .map_err(|e| format!("Failed to initialize backup manager: {}", e))?;
+    
+    manager
+        .get_all_backups()
+        .map_err(|e| format!("Failed to get all backups: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![read_directory, read_text_file, open_folder, encrypt_env_file, decrypt_env_file, rotate_key])
+        .invoke_handler(tauri::generate_handler![
+            read_directory,
+            read_text_file,
+            open_folder,
+            encrypt_env_file,
+            decrypt_env_file,
+            rotate_key,
+            create_backup,
+            get_backup,
+            list_backups,
+            delete_backup,
+            delete_all_backups,
+            get_backup_count,
+            get_database_size,
+            reset_backup_database,
+            get_app_data_dir,
+            get_home_dir,
+            debug_get_all_backups
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -6,11 +6,15 @@ import { StorageManager } from "./storage";
 import { ProjectSelector } from "./components/ProjectSelector";
 import { EnvFileViewer } from "./components/EnvFileViewer";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { Settings } from "./components/Settings";
+import { Settings as SettingsIcon } from "lucide-react";
+import { Button } from "./components/ui/button";
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     loadInitialData();
@@ -67,7 +71,18 @@ function App() {
       <header className="fixed top-0 left-0 right-0 z-10 bg-background border-b px-6 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Dotenvx GUI</h1>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showSettings ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowSettings(!showSettings)}
+              className="gap-2"
+            >
+              <SettingsIcon className="h-4 w-4" />
+              Settings
+            </Button>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -84,10 +99,14 @@ function App() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
-          <EnvFileViewer
-            project={selectedProject}
-            onProjectUpdate={handleProjectUpdate}
-          />
+          {showSettings ? (
+            <Settings />
+          ) : (
+            <EnvFileViewer
+              project={selectedProject}
+              onProjectUpdate={handleProjectUpdate}
+            />
+          )}
         </main>
       </div>
     </div>

@@ -18,9 +18,18 @@ import {
   Copy,
   Check,
   FolderOpen,
+  HardDrive,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { KeyRotationDisplay } from "./KeyRotationDisplay";
+import { BackupManager } from "./BackupManager";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "./ui/dialog";
 import { useFileWatcher } from "../hooks/useFileWatcher";
 
 interface EnvFileViewerProps {
@@ -38,10 +47,20 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   );
   const [showAllValues, setShowAllValues] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showBackupManager, setShowBackupManager] = useState(false);
+  const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(
+    project?.envFiles[0]?.id || null,
+  );
 
-  // Watch for file changes
+  // Watch for file changes - only watch the selected file
+  const selectedEnvFile = project?.envFiles.find(
+    (f) => f.id === selectedFileId,
+  );
+
   useFileWatcher({
     projectPath: project?.path || "",
+    selectedFilePath: selectedEnvFile?.path,
     onFilesChanged: (updatedEnvFiles) => {
       if (project) {
         onProjectUpdate({
@@ -221,10 +240,12 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       ) : (
         <Tabs
           defaultValue={project.envFiles[0]?.id}
+          value={selectedFileId || project.envFiles[0]?.id}
+          onValueChange={setSelectedFileId}
           className="w-full flex flex-col"
         >
           <div className="sticky top-4 z-10">
-            <Card className="border-b p-0 py-1 px-2">
+            <Card className="border-b p-0 py-1 px-1">
               <TabsList className="flex flex-1 flex-wrap gap-1 justify-start bg-transparent p-0 h-auto">
                 {project.envFiles.map((envFile) => (
                   <TabsTrigger
@@ -300,33 +321,48 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                       </div>
                       <div className="flex gap-2">
                         {envFile.type !== "example" &&
-                          envFile.type !== "keys" &&
-                          (envFile.isEncrypted ? (
-                            <Button
-                              onClick={() => handleDecrypt(envFile)}
-                              disabled={isProcessing !== null}
-                              variant="outline"
-                              size="sm"
-                              className="gap-2"
-                            >
-                              <Unlock className="h-4 w-4" />
-                              {isProcessing === envFile.id
-                                ? "Decrypting..."
-                                : "Decrypt"}
-                            </Button>
-                          ) : (
-                            <Button
-                              onClick={() => handleEncrypt(envFile)}
-                              disabled={isProcessing !== null}
-                              size="sm"
-                              className="gap-2"
-                            >
-                              <Lock className="h-4 w-4" />
-                              {isProcessing === envFile.id
-                                ? "Encrypting..."
-                                : "Encrypt"}
-                            </Button>
-                          ))}
+                          envFile.type !== "keys" && (
+                            <>
+                              <Button
+                                onClick={() => {
+                                  setShowBackupManager(true);
+                                  setCurrentEnvFile(envFile);
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                              >
+                                <HardDrive className="h-4 w-4" />
+                                Backups
+                              </Button>
+                              {envFile.isEncrypted ? (
+                                <Button
+                                  onClick={() => handleDecrypt(envFile)}
+                                  disabled={isProcessing !== null}
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2"
+                                >
+                                  <Unlock className="h-4 w-4" />
+                                  {isProcessing === envFile.id
+                                    ? "Decrypting..."
+                                    : "Decrypt"}
+                                </Button>
+                              ) : (
+                                <Button
+                                  onClick={() => handleEncrypt(envFile)}
+                                  disabled={isProcessing !== null}
+                                  size="sm"
+                                  className="gap-2"
+                                >
+                                  <Lock className="h-4 w-4" />
+                                  {isProcessing === envFile.id
+                                    ? "Encrypting..."
+                                    : "Encrypt"}
+                                </Button>
+                              )}
+                            </>
+                          )}
                       </div>
                     </div>
                   </CardHeader>
@@ -490,6 +526,28 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           </div>
         </Tabs>
       )}
+
+      {/* Backup Manager Dialog */}
+      <Dialog open={showBackupManager} onOpenChange={setShowBackupManager}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Backups - {currentEnvFile?.name}</DialogTitle>
+            <DialogClose onClick={() => setShowBackupManager(false)} />
+          </DialogHeader>
+          {currentEnvFile && (
+            <BackupManager
+              projectId={project?.id || ""}
+              filePath={currentEnvFile.path}
+              content={currentEnvFile.variables
+                .map((v) => `${v.key}=${v.value || ""}`)
+                .join("\n")}
+              onBackupCreated={() => {
+                // Optionally refresh project data
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
