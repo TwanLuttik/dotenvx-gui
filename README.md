@@ -2,6 +2,8 @@
 
 A modern, cross-platform desktop application for managing `.env` files with ease. Built with [Tauri](https://tauri.app/), [React](https://react.dev/), and [TypeScript](https://www.typescriptlang.org/).
 
+![Preview](./preview.png)
+
 ## Features
 
 - 🖥️ **Cross-platform** - Works on macOS, Windows, and Linux
