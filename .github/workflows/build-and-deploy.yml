@@ -13,6 +13,11 @@ on:
       - "bun.lock"
       - ".github/workflows/build-and-deploy.yml"
 
+# Set permissions for the workflow
+permissions:
+  contents: write
+  actions: read
+
 # Define the jobs to be run
 jobs:
   # Setup job - shared dependencies
