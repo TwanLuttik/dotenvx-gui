@@ -132,12 +132,14 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         });
         console.log("Encrypt result:", result);
 
-        // Update the file's encryption status
+        // Reload the file from disk to get updated variables
+        const { FileScanner } = await import("../utils/fileScanner");
+        const updatedEnvFiles = await FileScanner.scanProjectFolder(project.path);
+
+        // Update the project with the reloaded files
         const updatedProject: Project = {
           ...project,
-          envFiles: project.envFiles.map((file) =>
-            file.id === envFile.id ? { ...file, isEncrypted: true } : file,
-          ),
+          envFiles: updatedEnvFiles,
           lastModified: new Date().toISOString(),
         };
 
@@ -164,18 +166,19 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       setIsProcessing(envFile.id);
       try {
         console.log("Decrypting file:", envFile.path);
-        console.log("Decrypting file:", envFile.path);
         const result = await invoke<string>("decrypt_env_file", {
           filePath: envFile.path,
         });
         console.log("Decrypt result:", result);
 
-        // Update the file's encryption status
+        // Reload the file from disk to get updated variables
+        const { FileScanner } = await import("../utils/fileScanner");
+        const updatedEnvFiles = await FileScanner.scanProjectFolder(project.path);
+
+        // Update the project with the reloaded files
         const updatedProject: Project = {
           ...project,
-          envFiles: project.envFiles.map((file) =>
-            file.id === envFile.id ? { ...file, isEncrypted: false } : file,
-          ),
+          envFiles: updatedEnvFiles,
           lastModified: new Date().toISOString(),
         };
 
