@@ -805,7 +805,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                               </Button>
                             )}
                             {regularVariables.length > 0 &&
-                              regularVariables.some((v) => v.value) && (
+                              regularVariables.some((v) => v.isEncrypted) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -835,8 +835,12 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                           <div className="space-y-2">
                               {displayVariables.map((variable, index) => {
                                 const variableId = `${envFile.id}-${variable.key}`;
+                                // Plaintext values are already readable on disk -
+                                // masking them here adds friction, not security
+                                const isPlaintext = !variable.isEncrypted;
                                 const isVisible =
-                                  visibleVariables.has(variableId);
+                                  visibleVariables.has(variableId) ||
+                                  isPlaintext;
                                 if (editingVariableId === variableId) {
                                   return (
                                     <VariableForm
@@ -914,7 +918,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                           )}
                                         </Button>
                                       )}
-                                      {variable.value && (
+                                      {variable.value && !isPlaintext && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
