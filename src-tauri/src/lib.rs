@@ -206,6 +206,37 @@ async fn is_file_git_tracked(file_path: String) -> Result<bool, String> {
     }
 }
 
+// Check whether a file is covered by .gitignore. Returns true (= safe, no
+// warning) when the file is ignored, and also when there is nothing to warn
+// about: no git, not a repo, or the file doesn't exist.
+#[tauri::command]
+async fn is_file_git_ignored(file_path: String) -> Result<bool, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Ok(true);
+    }
+
+    let parent = path.parent().unwrap_or(Path::new("."));
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(parent)
+        .arg("check-ignore")
+        .arg("-q")
+        .arg(&file_path)
+        .output();
+
+    match output {
+        // check-ignore exits 0 = ignored, 1 = not ignored, 128 = not a repo
+        Ok(o) => match o.status.code() {
+            Some(1) => Ok(false),
+            _ => Ok(true),
+        },
+        Err(_) => Ok(true),
+    }
+}
+
 // Decrypt a single variable in memory via `dotenvx get` - never modifies the file
 #[tauri::command]
 async fn get_decrypted_value(file_path: String, key: String) -> Result<String, String> {
@@ -548,6 +579,7 @@ pub fn run() {
             encrypt_env_file,
             decrypt_env_file,
             is_file_git_tracked,
+            is_file_git_ignored,
             get_decrypted_value,
             get_decrypted_values,
             set_env_value,

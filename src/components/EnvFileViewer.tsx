@@ -110,10 +110,40 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   );
   const [editInitialValue, setEditInitialValue] = useState("");
   const [showBackupManager, setShowBackupManager] = useState(false);
+  const [showKeysManager, setShowKeysManager] = useState(false);
   const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
+
+  // .env.keys holds private decryption keys - it gets its own dialog off the
+  // project header instead of masquerading as an environment file tab
+  const tabFiles = project?.envFiles.filter((f) => f.type !== "keys") ?? [];
+  const keysFile = project?.envFiles.find((f) => f.type === "keys");
+
   const [selectedFileId, setSelectedFileId] = useState<string | null>(
-    project?.envFiles[0]?.id || null,
+    project?.envFiles.find((f) => f.type !== "keys")?.id || null,
   );
+
+  // A git-tracked .env.keys means private keys could be committed - the
+  // single worst failure mode of the dotenvx model, so check and warn loudly
+  const [keysFileTracked, setKeysFileTracked] = useState(false);
+  // Untracked but not gitignored is the highest-risk moment: dotenvx just
+  // created the keys file and one `git add .` commits it
+  const [keysFileIgnored, setKeysFileIgnored] = useState(true);
+  const keysFilePath = keysFile?.path;
+  useEffect(() => {
+    if (!keysFilePath) {
+      setKeysFileTracked(false);
+      setKeysFileIgnored(true);
+      return;
+    }
+    invoke<boolean>("is_file_git_tracked", { filePath: keysFilePath })
+      .then(setKeysFileTracked)
+      .catch(() => setKeysFileTracked(false));
+    invoke<boolean>("is_file_git_ignored", { filePath: keysFilePath })
+      .then(setKeysFileIgnored)
+      .catch(() => setKeysFileIgnored(true));
+  }, [keysFilePath]);
+
+  const keysFileAtRisk = !keysFileTracked && !keysFileIgnored;
 
   // Watch for file changes - only watch the selected file
   const selectedEnvFile = project?.envFiles.find(
@@ -149,6 +179,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     // so "Show All" reveals plaintext without touching the files on disk
     const newDecrypted = new Map<string, string>();
     for (const file of project?.envFiles || []) {
+      if (file.type === "keys") continue;
       if (!file.variables.some((v) => v.isEncrypted)) continue;
       try {
         const json = await invoke<string>("get_decrypted_values", {
@@ -166,6 +197,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
     const allKeys = new Set<string>();
     project?.envFiles.forEach((file) => {
+      if (file.type === "keys") return;
       file.variables.forEach((variable) => {
         if (isDotenvxMetadata(variable.key)) return;
         allKeys.add(`${file.id}-${variable.key}`);
@@ -487,19 +519,38 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
             {project.path}
           </p>
         </div>
-        <Button
-          onClick={handleOpenFolder}
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          title="Open folder in file explorer"
-        >
-          <FolderOpen className="h-4 w-4" />
-          Open Folder
-        </Button>
+        <div className="flex gap-2">
+          {keysFile && (
+            <Button
+              onClick={() => setShowKeysManager(true)}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              title="View and rotate private decryption keys"
+            >
+              <Key className="h-4 w-4" />
+              Keys
+              {keysFileTracked ? (
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+              ) : keysFileAtRisk ? (
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+              ) : null}
+            </Button>
+          )}
+          <Button
+            onClick={handleOpenFolder}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            title="Open folder in file explorer"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Open Folder
+          </Button>
+        </div>
       </div>
 
-      {project.envFiles.length === 0 ? (
+      {tabFiles.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
@@ -515,15 +566,15 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         </Card>
       ) : (
         <Tabs
-          defaultValue={project.envFiles[0]?.id}
-          value={selectedFileId || project.envFiles[0]?.id}
+          defaultValue={tabFiles[0]?.id}
+          value={selectedFileId || tabFiles[0]?.id}
           onValueChange={setSelectedFileId}
           className="w-full flex flex-col"
         >
           <div className="sticky top-4 z-10">
             <Card className="border-b p-0 py-1 px-1">
               <TabsList className="flex flex-1 flex-wrap gap-1 justify-start bg-transparent p-0 h-auto">
-                {project.envFiles.map((envFile) => (
+                {tabFiles.map((envFile) => (
                   <TabsTrigger
                     key={envFile.id}
                     value={envFile.id}
@@ -541,7 +592,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
             </Card>
           </div>
           <div className="pt-4">
-            {project.envFiles.map((envFile) => {
+            {tabFiles.map((envFile) => {
               const regularVariables = envFile.variables.filter(
                 (v) => !isDotenvxMetadata(v.key),
               );
@@ -591,14 +642,6 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                             className="gap-1 text-blue-600"
                           >
                             <Info className="h-3 w-3" /> Example
-                          </Badge>
-                        )}
-                        {envFile.type === "keys" && (
-                          <Badge
-                            variant="outline"
-                            className="gap-1 text-purple-600"
-                          >
-                            <Key className="h-3 w-3" /> Keys
                           </Badge>
                         )}
                       </div>
@@ -716,24 +759,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
                   <CardContent className="mt-5">
                     <div className="space-y-3">
-                      {envFile.type === "keys" ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <Key className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="font-medium">Key Rotation</h4>
-                          </div>
-                          <KeyRotationDisplay
-                            keysFile={envFile}
-                            onRotationComplete={() => {
-                              // Reload the project to get updated keys
-                              if (project) {
-                                onProjectUpdate(project);
-                              }
-                            }}
-                          />
-                        </>
-                      ) : (
-                        <>
+                      <>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Key className="h-4 w-4 text-muted-foreground" />
@@ -915,7 +941,6 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                             </Button>
                           )}
                         </>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -947,6 +972,55 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Keys Dialog */}
+      {keysFile && (
+        <Dialog open={showKeysManager} onOpenChange={setShowKeysManager}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Private Keys - {keysFile.name}</DialogTitle>
+              <DialogClose onClick={() => setShowKeysManager(false)} />
+            </DialogHeader>
+            {keysFileTracked && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>{keysFile.name} is tracked by git!</strong> This
+                  file contains private decryption keys and must never be
+                  committed. Add it to .gitignore, then run{" "}
+                  <code>git rm --cached {keysFile.name}</code> to untrack it.
+                </AlertDescription>
+              </Alert>
+            )}
+            {keysFileAtRisk && (
+              <Alert className="border-amber-500/50 text-amber-600 dark:text-amber-400 [&>svg]:text-current">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="text-amber-600/90 dark:text-amber-400/90">
+                  <strong>{keysFile.name} is not covered by .gitignore.</strong>{" "}
+                  It contains private decryption keys and is one{" "}
+                  <code>git add .</code> away from being committed. Add{" "}
+                  <code>{keysFile.name}</code> to .gitignore.
+                </AlertDescription>
+              </Alert>
+            )}
+            <KeyRotationDisplay
+              keysFile={keysFile}
+              onRotationComplete={async () => {
+                // Rotation re-encrypts the .env files - reload from disk
+                const { FileScanner } = await import("../utils/fileScanner");
+                const updatedEnvFiles = await FileScanner.scanProjectFolder(
+                  project.path,
+                );
+                onProjectUpdate({
+                  ...project,
+                  envFiles: updatedEnvFiles,
+                  lastModified: new Date().toISOString(),
+                });
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
