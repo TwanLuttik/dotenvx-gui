@@ -120,6 +120,44 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   }, []);
 
+  const copyDecryptedValue = useCallback(
+    async (envFile: EnvFile, variable: EnvVariable) => {
+      const variableId = `${envFile.id}-${variable.key}`;
+      let plaintext = decryptedValues.get(variableId) ?? variable.value;
+
+      // Decrypt in memory if needed - the value is copied without being shown
+      if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+        try {
+          plaintext = await invoke<string>("get_decrypted_value", {
+            filePath: envFile.path,
+            key: variable.key,
+          });
+        } catch (error) {
+          console.error("Failed to decrypt variable:", error);
+          alert(`Failed to decrypt ${variable.key}: ${error}`);
+          return;
+        }
+      }
+
+      await navigator.clipboard.writeText(plaintext);
+      setCopiedKey(`value-${variableId}`);
+      setTimeout(() => setCopiedKey(null), 2000);
+
+      // Clear the clipboard after 30s, but only if it still holds this secret
+      const copied = plaintext;
+      setTimeout(async () => {
+        try {
+          if ((await navigator.clipboard.readText()) === copied) {
+            await navigator.clipboard.writeText("");
+          }
+        } catch {
+          // clipboard not readable - leave it alone
+        }
+      }, 30_000);
+    },
+    [decryptedValues],
+  );
+
   const toggleVariableVisibility = useCallback(
     async (envFile: EnvFile, variable: EnvVariable) => {
       const variableId = `${envFile.id}-${variable.key}`;
@@ -558,6 +596,27 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                         }
                                         isVisible={isVisible}
                                       />
+                                      {variable.value && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            copyDecryptedValue(
+                                              envFile,
+                                              variable,
+                                            )
+                                          }
+                                          className="h-6 w-6 p-0"
+                                          title="Copy value (decrypted in memory, clipboard clears after 30s)"
+                                        >
+                                          {copiedKey ===
+                                          `value-${variableId}` ? (
+                                            <Check className="h-4 w-4 text-green-600" />
+                                          ) : (
+                                            <Copy className="h-4 w-4" />
+                                          )}
+                                        </Button>
+                                      )}
                                       {variable.value && (
                                         <Button
                                           variant="ghost"
