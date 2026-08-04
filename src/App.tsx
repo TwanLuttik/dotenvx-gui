@@ -43,6 +43,15 @@ function App() {
     await StorageManager.setSelectedProject(project?.id || null);
   };
 
+  // Keep the selected project in sync when the sidebar rescans - it holds
+  // its own copy, and a stale copy keeps showing deleted files/keys
+  const handleProjectsUpdate = (updated: Project[]) => {
+    setProjects(updated);
+    setSelectedProject(
+      (prev) => (prev && updated.find((p) => p.id === prev.id)) || prev,
+    );
+  };
+
   const handleProjectUpdate = async (updatedProject: Project) => {
     await StorageManager.saveProject(updatedProject);
     setSelectedProject((prev) => {
@@ -93,7 +102,7 @@ function App() {
             projects={projects}
             selectedProjectId={selectedProject?.id || null}
             onProjectSelect={handleProjectSelect}
-            onProjectsUpdate={setProjects}
+            onProjectsUpdate={handleProjectsUpdate}
           />
         </aside>
 
