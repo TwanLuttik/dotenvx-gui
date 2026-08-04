@@ -35,6 +35,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogClose,
 } from "./ui/dialog";
 import { useFileWatcher } from "../hooks/useFileWatcher";
@@ -1140,7 +1141,12 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         <Dialog open={showKeysManager} onOpenChange={setShowKeysManager}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Private Keys - {keysFile.name}</DialogTitle>
+              <div className="space-y-1">
+                <DialogTitle>Private Keys</DialogTitle>
+                <DialogDescription className="font-mono text-xs break-all">
+                  {keysFile.path}
+                </DialogDescription>
+              </div>
               <DialogClose onClick={() => setShowKeysManager(false)} />
             </DialogHeader>
             {keysFileTracked && (

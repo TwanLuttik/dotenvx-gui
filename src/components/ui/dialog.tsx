@@ -51,7 +51,7 @@ export function DialogContent({
 
 export function DialogHeader({ children, className = "" }: DialogHeaderProps) {
   return (
-    <div className={`flex items-center justify-between mb-4 ${className}`}>
+    <div className={`flex items-start justify-between mb-4 ${className}`}>
       {children}
     </div>
   );
@@ -59,6 +59,15 @@ export function DialogHeader({ children, className = "" }: DialogHeaderProps) {
 
 export function DialogTitle({ children, className = "" }: DialogTitleProps) {
   return <h2 className={`text-xl font-bold ${className}`}>{children}</h2>;
+}
+
+export function DialogDescription({
+  children,
+  className = "",
+}: DialogTitleProps) {
+  return (
+    <p className={`text-sm text-muted-foreground ${className}`}>{children}</p>
+  );
 }
 
 export function DialogClose({ onClick }: DialogCloseProps) {
