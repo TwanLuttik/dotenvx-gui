@@ -38,6 +38,8 @@ export class FileScanner {
         }
       }
 
+      envFiles.sort((a, b) => a.name.localeCompare(b.name));
+
       // Validate keys against .env.example if it exists
       const exampleFile = envFiles.find((file) => file.name === ".env.example");
       if (exampleFile) {
