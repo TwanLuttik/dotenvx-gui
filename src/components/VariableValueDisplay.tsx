@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 
 interface VariableValueDisplayProps {
   value: string;
@@ -9,53 +9,28 @@ export const VariableValueDisplay: React.FC<VariableValueDisplayProps> = ({
   value,
   isVisible,
 }) => {
-  const [isHovering, setIsHovering] = useState(false);
-
   const displayValue = isVisible
     ? value || "(empty)"
     : value
     ? "••••••••"
     : "(empty)";
-  const shouldScroll = isHovering && isVisible && value && value.length > 20;
 
   return (
-    <div
-      className="relative overflow-hidden"
-      style={{ width: "300px" }}
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-    >
-      <span
-        className={`text-sm text-muted-foreground font-mono block ${
-          shouldScroll ? "animate-scroll" : ""
-        }`}
-        style={
-          shouldScroll
-            ? {
-                animation: "scroll 8s linear infinite",
-                whiteSpace: "nowrap",
-              }
-            : {
-                whiteSpace: "nowrap",
-                textOverflow: "ellipsis",
-                overflow: "hidden",
-                textAlign: !isVisible ? "right" : "left",
-              }
-        }
-      >
-        {displayValue}
-      </span>
-
-      <style>{`
-        @keyframes scroll {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-100%);
-          }
-        }
-      `}</style>
-    </div>
+    <input
+      type="text"
+      // Controlled with a fixed value instead of readOnly: WebKit suppresses
+      // the caret and cursor-key handling in readonly inputs, so this keeps
+      // normal textbox behavior while React discards any typed changes
+      value={displayValue}
+      onChange={() => {}}
+      spellCheck={false}
+      autoCorrect="off"
+      autoCapitalize="off"
+      className="text-sm text-muted-foreground font-mono bg-transparent border-none outline-none p-0 cursor-text"
+      style={{
+        width: "300px",
+        textAlign: isVisible ? "left" : "right",
+      }}
+    />
   );
 };
