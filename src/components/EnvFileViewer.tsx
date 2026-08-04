@@ -20,8 +20,11 @@ import {
   Check,
   FolderOpen,
   HardDrive,
+  Plus,
+  Pencil,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
+import { VariableForm } from "./VariableForm";
 import { KeyRotationDisplay } from "./KeyRotationDisplay";
 import { BackupManager } from "./BackupManager";
 import {
@@ -97,6 +100,11 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   }, []);
   const [showAllValues, setShowAllValues] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [addingToFileId, setAddingToFileId] = useState<string | null>(null);
+  const [editingVariableId, setEditingVariableId] = useState<string | null>(
+    null,
+  );
+  const [editInitialValue, setEditInitialValue] = useState("");
   const [showBackupManager, setShowBackupManager] = useState(false);
   const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(
@@ -244,6 +252,99 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       scheduleRemask(variableId);
     },
     [visibleVariables, decryptedValues, cancelRemask, hideVariable, scheduleRemask],
+  );
+
+  const saveVariable = useCallback(
+    async (envFile: EnvFile, key: string, value: string): Promise<boolean> => {
+      if (!project) return false;
+
+      try {
+        // dotenvx set encrypts the value in-flight when the file has a
+        // public key, so plaintext never lands on disk for encrypted files
+        await invoke<string>("set_env_value", {
+          filePath: envFile.path,
+          key,
+          value,
+        });
+
+        // Reload the file from disk to get updated variables
+        const { FileScanner } = await import("../utils/fileScanner");
+        const updatedEnvFiles = await FileScanner.scanProjectFolder(
+          project.path,
+        );
+        onProjectUpdate({
+          ...project,
+          envFiles: updatedEnvFiles,
+          lastModified: new Date().toISOString(),
+        });
+        return true;
+      } catch (error) {
+        console.error("Failed to set variable:", error);
+        alert(`Failed to save ${key}: ${error}`);
+        return false;
+      }
+    },
+    [project, onProjectUpdate],
+  );
+
+  const handleAddVariable = useCallback(
+    async (envFile: EnvFile, key: string, value: string) => {
+      if (envFile.variables.some((v) => v.key === key)) {
+        const proceed = await confirm(
+          `${key} already exists in ${envFile.name}. Overwrite its value?`,
+          {
+            title: "Overwrite variable?",
+            kind: "warning",
+            okLabel: "Overwrite",
+            cancelLabel: "Cancel",
+          },
+        );
+        if (!proceed) return;
+      }
+
+      if (await saveVariable(envFile, key, value)) {
+        setAddingToFileId(null);
+      }
+    },
+    [saveVariable],
+  );
+
+  const startEditVariable = useCallback(
+    async (envFile: EnvFile, variable: EnvVariable) => {
+      const variableId = `${envFile.id}-${variable.key}`;
+      let current = decryptedValues.get(variableId) ?? variable.value;
+
+      // Prefill the form with the plaintext, decrypting in memory if needed
+      if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+        try {
+          current = await invoke<string>("get_decrypted_value", {
+            filePath: envFile.path,
+            key: variable.key,
+          });
+        } catch (error) {
+          console.error("Failed to decrypt variable for editing:", error);
+          current = "";
+        }
+      }
+
+      setEditInitialValue(current);
+      setEditingVariableId(variableId);
+    },
+    [decryptedValues],
+  );
+
+  const handleEditVariable = useCallback(
+    async (envFile: EnvFile, variable: EnvVariable, value: string) => {
+      const variableId = `${envFile.id}-${variable.key}`;
+      if (await saveVariable(envFile, variable.key, value)) {
+        // Keep the in-memory plaintext cache in sync if this value was revealed
+        setDecryptedValues((prev) =>
+          prev.has(variableId) ? new Map(prev).set(variableId, value) : prev,
+        );
+        setEditingVariableId(null);
+      }
+    },
+    [saveVariable],
   );
 
   const handleOpenFolder = useCallback(async () => {
@@ -635,6 +736,26 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                 const variableId = `${envFile.id}-${variable.key}`;
                                 const isVisible =
                                   visibleVariables.has(variableId);
+                                if (editingVariableId === variableId) {
+                                  return (
+                                    <VariableForm
+                                      key={index}
+                                      initialKey={variable.key}
+                                      keyLocked
+                                      initialValue={editInitialValue}
+                                      onSave={(_key, value) =>
+                                        handleEditVariable(
+                                          envFile,
+                                          variable,
+                                          value,
+                                        )
+                                      }
+                                      onCancel={() =>
+                                        setEditingVariableId(null)
+                                      }
+                                    />
+                                  );
+                                }
                                 return (
                                   <div
                                     key={index}
@@ -716,11 +837,46 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                           )}
                                         </Button>
                                       )}
+                                      {variable.key !==
+                                        "DOTENV_PUBLIC_KEY" && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            startEditVariable(
+                                              envFile,
+                                              variable,
+                                            )
+                                          }
+                                          className="h-6 w-6 p-0"
+                                          title="Edit value (re-encrypted on save)"
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
+                          )}
+                          {addingToFileId === envFile.id ? (
+                            <VariableForm
+                              onSave={(key, value) =>
+                                handleAddVariable(envFile, key, value)
+                              }
+                              onCancel={() => setAddingToFileId(null)}
+                            />
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setAddingToFileId(envFile.id)}
+                              className="gap-1 text-muted-foreground"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add Variable
+                            </Button>
                           )}
                         </>
                       )}

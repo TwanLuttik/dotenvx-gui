@@ -284,6 +284,47 @@ async fn get_decrypted_values(file_path: String) -> Result<String, String> {
     }
 }
 
+// Set (add or update) a variable via `dotenvx set` - the value is encrypted
+// before it is written when the file has a public key, so plaintext never
+// touches the disk for encrypted files
+#[tauri::command]
+async fn set_env_value(file_path: String, key: String, value: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let dotenvx_path = find_dotenvx();
+
+    // Check if dotenvx is installed
+    let dotenvx_check = Command::new(&dotenvx_path)
+        .arg("--version")
+        .output();
+
+    if dotenvx_check.is_err() {
+        return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
+    }
+
+    // Run dotenvx set command
+    let output = Command::new(&dotenvx_path)
+        .arg("set")
+        .arg(&key)
+        .arg(&value)
+        .arg("-f")
+        .arg(&file_path)
+        .current_dir(path.parent().unwrap_or(Path::new(".")))
+        .output()
+        .map_err(|e| format!("Failed to execute dotenvx set: {}", e))?;
+
+    if output.status.success() {
+        Ok(format!("{} set successfully", key))
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("dotenvx set failed: {}", error_msg))
+    }
+}
+
 // Helper function to derive .env file path from key name
 fn get_env_file_from_key(key_name: &str, keys_dir: &Path) -> PathBuf {
     // DOTENV_PRIVATE_KEY -> .env
@@ -509,6 +550,7 @@ pub fn run() {
             is_file_git_tracked,
             get_decrypted_value,
             get_decrypted_values,
+            set_env_value,
             rotate_key,
             create_backup,
             get_backup,
