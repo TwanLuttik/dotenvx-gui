@@ -5,53 +5,72 @@ import { EnvFile } from "../types";
 
 interface FileWatcherOptions {
   projectPath: string;
-  selectedFilePath?: string;
+  // Files to poll for changes - typically the selected tab and .env.keys
+  watchPaths?: (string | undefined)[];
   onFilesChanged: (envFiles: EnvFile[]) => void;
   pollInterval?: number;
 }
 
+// NUL never appears in file paths, unlike spaces
+const PATH_SEPARATOR = "\u0000";
+
 export const useFileWatcher = ({
   projectPath,
-  selectedFilePath,
+  watchPaths,
   onFilesChanged,
   pollInterval = 5000,
 }: FileWatcherOptions) => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastModifiedRef = useRef<number | null>(null);
+  const hashesRef = useRef<Map<string, number>>(new Map());
   const lastScannedRef = useRef<number>(0);
 
+  // Join to a string so an inline array prop doesn't reset the interval
+  // on every render
+  const pathsKey = (watchPaths ?? []).filter(Boolean).join(PATH_SEPARATOR);
+
   const checkForChanges = useCallback(async () => {
-    if (!projectPath || !selectedFilePath) {
+    const paths = pathsKey ? pathsKey.split(PATH_SEPARATOR) : [];
+    if (!projectPath || paths.length === 0) {
       return;
     }
 
-    try {
-      // Only read the selected file to check for changes
-      const content = await invoke<string>("read_text_file", {
-        path: selectedFilePath,
-      });
-
-      // Use content hash as a simple change detector
-      const contentHash = content.length;
-      const previousHash = lastModifiedRef.current;
-
-      if (previousHash !== contentHash) {
-        lastModifiedRef.current = contentHash;
-
-        // Only rescan the project if the selected file changed
-        // This reduces the number of full scans
-        const now = Date.now();
-        if (now - lastScannedRef.current > 10000) {
-          // Rescan every 10 seconds max
-          const envFiles = await FileScanner.scanProjectFolder(projectPath);
-          onFilesChanged(envFiles);
-          lastScannedRef.current = now;
-        }
+    const newHashes = new Map<string, number>();
+    let changed = false;
+    for (const path of paths) {
+      let contentHash: number;
+      try {
+        // Use content length as a simple change detector
+        const content = await invoke<string>("read_text_file", { path });
+        contentHash = content.length;
+      } catch {
+        // Unreadable (e.g. deleted) counts as a distinct state, so a
+        // deleted .env.keys still triggers a rescan once
+        contentHash = -1;
       }
-    } catch (error) {
-      console.error("Error checking for file changes:", error);
+      newHashes.set(path, contentHash);
+      if (hashesRef.current.get(path) !== contentHash) {
+        changed = true;
+      }
     }
-  }, [projectPath, selectedFilePath, onFilesChanged]);
+
+    if (!changed) {
+      return;
+    }
+
+    // Rescan every 10 seconds max; leave hashes uncommitted when
+    // throttled so the change is retried on the next poll
+    const now = Date.now();
+    if (now - lastScannedRef.current > 10000) {
+      try {
+        hashesRef.current = newHashes;
+        const envFiles = await FileScanner.scanProjectFolder(projectPath);
+        onFilesChanged(envFiles);
+        lastScannedRef.current = now;
+      } catch (error) {
+        console.error("Error checking for file changes:", error);
+      }
+    }
+  }, [projectPath, pathsKey, onFilesChanged]);
 
   useEffect(() => {
     // Initial check

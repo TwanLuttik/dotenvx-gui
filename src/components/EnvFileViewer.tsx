@@ -166,7 +166,9 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
   useFileWatcher({
     projectPath: project?.path || "",
-    selectedFilePath: selectedEnvFile?.path,
+    // Watch .env.keys too - it has no tab, so external edits (e.g. deleting
+    // a private key) would otherwise go unnoticed until a manual refresh
+    watchPaths: [selectedEnvFile?.path, keysFile?.path],
     onFilesChanged: (updatedEnvFiles) => {
       if (project) {
         onProjectUpdate({
