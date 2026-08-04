@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { EnvFile, EnvVariable, Project } from "../types";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -252,6 +253,32 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       if (!envFile.isEncrypted) {
         alert("This file is not encrypted");
         return;
+      }
+
+      // Decrypting rewrites the file with plaintext - warn if git could commit it
+      try {
+        const tracked = await invoke<boolean>("is_file_git_tracked", {
+          filePath: envFile.path,
+        });
+        if (tracked) {
+          // window.confirm is patched by the dialog plugin to return a
+          // Promise, which is always truthy - await the plugin API instead
+          const proceed = await confirm(
+            `${envFile.name} is tracked by git.\n\n` +
+              "Decrypting will write plaintext secrets to a file that could " +
+              "be accidentally committed. To view values without modifying " +
+              "the file, use the eye icon or Show All instead.",
+            {
+              title: "Decrypt file on disk?",
+              kind: "warning",
+              okLabel: "Decrypt Anyway",
+              cancelLabel: "Cancel",
+            },
+          );
+          if (!proceed) return;
+        }
+      } catch (error) {
+        console.error("Failed to check git status:", error);
       }
 
       setIsProcessing(envFile.id);

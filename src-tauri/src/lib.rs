@@ -180,6 +180,32 @@ async fn decrypt_env_file(file_path: String) -> Result<String, String> {
     }
 }
 
+// Check whether a file is tracked by git (used to warn before writing plaintext to it)
+#[tauri::command]
+async fn is_file_git_tracked(file_path: String) -> Result<bool, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let parent = path.parent().unwrap_or(Path::new("."));
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(parent)
+        .arg("ls-files")
+        .arg("--error-unmatch")
+        .arg(&file_path)
+        .output();
+
+    match output {
+        Ok(o) => Ok(o.status.success()),
+        // git missing or not a repo - can't check, so don't warn
+        Err(_) => Ok(false),
+    }
+}
+
 // Decrypt a single variable in memory via `dotenvx get` - never modifies the file
 #[tauri::command]
 async fn get_decrypted_value(file_path: String, key: String) -> Result<String, String> {
@@ -480,6 +506,7 @@ pub fn run() {
             open_folder,
             encrypt_env_file,
             decrypt_env_file,
+            is_file_git_tracked,
             get_decrypted_value,
             get_decrypted_values,
             rotate_key,
