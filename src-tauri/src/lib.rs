@@ -314,6 +314,46 @@ async fn get_decrypted_values(file_path: String) -> Result<String, String> {
     }
 }
 
+// Encrypt a single variable in place via `dotenvx encrypt -k` - other
+// variables in the file are left untouched
+#[tauri::command]
+async fn encrypt_env_key(file_path: String, key: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let dotenvx_path = find_dotenvx();
+
+    // Check if dotenvx is installed
+    let dotenvx_check = Command::new(&dotenvx_path)
+        .arg("--version")
+        .output();
+
+    if dotenvx_check.is_err() {
+        return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
+    }
+
+    // Run dotenvx encrypt for the single key
+    let output = Command::new(&dotenvx_path)
+        .arg("encrypt")
+        .arg("-f")
+        .arg(&file_path)
+        .arg("-k")
+        .arg(&key)
+        .current_dir(path.parent().unwrap_or(Path::new(".")))
+        .output()
+        .map_err(|e| format!("Failed to execute dotenvx encrypt: {}", e))?;
+
+    if output.status.success() {
+        Ok(format!("{} encrypted successfully", key))
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("dotenvx encrypt failed: {}", error_msg))
+    }
+}
+
 // Set (add or update) a variable via `dotenvx set` - the value is encrypted
 // before it is written when the file has a public key, so plaintext never
 // touches the disk for encrypted files
@@ -582,6 +622,7 @@ pub fn run() {
             get_decrypted_value,
             get_decrypted_values,
             set_env_value,
+            encrypt_env_key,
             rotate_key,
             create_backup,
             get_backup,

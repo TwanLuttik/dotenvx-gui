@@ -351,6 +351,54 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     [saveVariable],
   );
 
+  const handleEncryptVariable = useCallback(
+    async (envFile: EnvFile, variable: EnvVariable) => {
+      if (!project) return;
+
+      // Encrypting the first value in a keyless file has side effects far
+      // bigger than the icon suggests - confirm the bootstrap once
+      const hasKeypair = envFile.variables.some((v) =>
+        isDotenvxMetadata(v.key),
+      );
+      if (!hasKeypair) {
+        const proceed = await confirm(
+          `${envFile.name} is not set up for encryption yet. Encrypting ` +
+            `${variable.key} will add DOTENV_PUBLIC_KEY to the file and ` +
+            `create .env.keys with the private decryption key.`,
+          {
+            title: "Set up encryption?",
+            kind: "info",
+            okLabel: "Encrypt",
+            cancelLabel: "Cancel",
+          },
+        );
+        if (!proceed) return;
+      }
+
+      try {
+        await invoke<string>("encrypt_env_key", {
+          filePath: envFile.path,
+          key: variable.key,
+        });
+
+        // Reload the file from disk to get updated variables
+        const { FileScanner } = await import("../utils/fileScanner");
+        const updatedEnvFiles = await FileScanner.scanProjectFolder(
+          project.path,
+        );
+        onProjectUpdate({
+          ...project,
+          envFiles: updatedEnvFiles,
+          lastModified: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("Failed to encrypt variable:", error);
+        alert(`Failed to encrypt ${variable.key}: ${error}`);
+      }
+    },
+    [project, onProjectUpdate],
+  );
+
   const startEditVariable = useCallback(
     async (envFile: EnvFile, variable: EnvVariable) => {
       const variableId = `${envFile.id}-${variable.key}`;
@@ -940,6 +988,23 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                           ) : (
                                             <Eye className="h-4 w-4" />
                                           )}
+                                        </Button>
+                                      ) : variable.value &&
+                                        isPlaintext &&
+                                        envFile.type !== "example" ? (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            handleEncryptVariable(
+                                              envFile,
+                                              variable,
+                                            )
+                                          }
+                                          className="h-6 w-6 p-0"
+                                          title="Encrypt this value"
+                                        >
+                                          <Lock className="h-4 w-4" />
                                         </Button>
                                       ) : (
                                         <span className="h-6 w-6" />
