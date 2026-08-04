@@ -117,6 +117,11 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   // Pencil click shells out to dotenvx to prefill the plaintext - show a
   // spinner on the clicked pencil while that runs
   const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
+  // Same deal for the eye: first reveal of an encrypted value shells out too
+  const [revealLoadingId, setRevealLoadingId] = useState<string | null>(null);
+  // And for copy-to-clipboard on an encrypted value, and Show All
+  const [copyLoadingId, setCopyLoadingId] = useState<string | null>(null);
+  const [showAllLoading, setShowAllLoading] = useState(false);
   const [showBackupManager, setShowBackupManager] = useState(false);
   const [showKeysManager, setShowKeysManager] = useState(false);
   const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
@@ -186,21 +191,26 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     // Decrypt encrypted files in memory via `dotenvx get --format json`
     // so "Show All" reveals plaintext without touching the files on disk
     const newDecrypted = new Map<string, string>();
-    for (const file of project?.envFiles || []) {
-      if (file.type === "keys") continue;
-      if (!file.variables.some((v) => v.isEncrypted)) continue;
-      try {
-        const json = await invoke<string>("get_decrypted_values", {
-          filePath: file.path,
-        });
-        const values: Record<string, string> = JSON.parse(json);
-        for (const [key, value] of Object.entries(values)) {
-          if (isDotenvxMetadata(key)) continue;
-          newDecrypted.set(`${file.id}-${key}`, value);
+    setShowAllLoading(true);
+    try {
+      for (const file of project?.envFiles || []) {
+        if (file.type === "keys") continue;
+        if (!file.variables.some((v) => v.isEncrypted)) continue;
+        try {
+          const json = await invoke<string>("get_decrypted_values", {
+            filePath: file.path,
+          });
+          const values: Record<string, string> = JSON.parse(json);
+          for (const [key, value] of Object.entries(values)) {
+            if (isDotenvxMetadata(key)) continue;
+            newDecrypted.set(`${file.id}-${key}`, value);
+          }
+        } catch (error) {
+          console.error(`Failed to decrypt ${file.name} in memory:`, error);
         }
-      } catch (error) {
-        console.error(`Failed to decrypt ${file.name} in memory:`, error);
       }
+    } finally {
+      setShowAllLoading(false);
     }
 
     const allKeys = new Set<string>();
@@ -237,6 +247,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
       // Decrypt in memory if needed - the value is copied without being shown
       if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+        setCopyLoadingId(variableId);
         try {
           plaintext = await invoke<string>("get_decrypted_value", {
             filePath: envFile.path,
@@ -246,6 +257,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           console.error("Failed to decrypt variable:", error);
           alert(`Failed to decrypt ${variable.key}: ${error}`);
           return;
+        } finally {
+          setCopyLoadingId(null);
         }
       }
 
@@ -281,6 +294,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       // Encrypted value: decrypt in memory so the eye shows plaintext,
       // without ever rewriting the file on disk
       if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+        setRevealLoadingId(variableId);
         try {
           const plaintext = await invoke<string>("get_decrypted_value", {
             filePath: envFile.path,
@@ -291,6 +305,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           console.error("Failed to decrypt variable:", error);
           alert(`Failed to decrypt ${variable.key}: ${error}`);
           return;
+        } finally {
+          setRevealLoadingId(null);
         }
       }
 
@@ -884,6 +900,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                   variant="outline"
                                   size="sm"
                                   onClick={toggleAllVisibility}
+                                  disabled={showAllLoading}
                                   className="h-8"
                                   title={
                                     showAllValues
@@ -891,7 +908,12 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                       : "Show all values (encrypted files are decrypted in memory, files untouched)"
                                   }
                                 >
-                                  {showAllValues ? (
+                                  {showAllLoading ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                      Show All
+                                    </>
+                                  ) : showAllValues ? (
                                     <>
                                       <EyeOff className="h-4 w-4 mr-1" />
                                       Hide All
@@ -983,11 +1005,14 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                               variable,
                                             )
                                           }
+                                          disabled={copyLoadingId !== null}
                                           className="h-6 w-6 p-0"
                                           title="Copy value (decrypted in memory, clipboard clears after 30s)"
                                         >
-                                          {copiedKey ===
-                                          `value-${variableId}` ? (
+                                          {copyLoadingId === variableId ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : copiedKey ===
+                                            `value-${variableId}` ? (
                                             <Check className="h-4 w-4 text-green-600" />
                                           ) : (
                                             <Copy className="h-4 w-4" />
@@ -1006,10 +1031,13 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                               variable,
                                             )
                                           }
+                                          disabled={revealLoadingId !== null}
                                           className="h-6 w-6 p-0"
                                           title="Reveal (decrypts in memory, file untouched)"
                                         >
-                                          {isVisible ? (
+                                          {revealLoadingId === variableId ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : isVisible ? (
                                             <EyeOff className="h-4 w-4" />
                                           ) : (
                                             <Eye className="h-4 w-4" />
