@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EnvFile, EnvVariable, Project } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
@@ -50,6 +50,51 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   const [decryptedValues, setDecryptedValues] = useState<Map<string, string>>(
     new Map(),
   );
+  // Revealed values re-mask automatically so secrets don't linger on screen
+  const REMASK_DELAY_MS = 60_000;
+  const remaskTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+
+  const hideVariable = useCallback((variableId: string) => {
+    setVisibleVariables((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(variableId);
+      return newSet;
+    });
+    setDecryptedValues((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(variableId);
+      return newMap;
+    });
+  }, []);
+
+  const cancelRemask = useCallback((variableId: string) => {
+    const timer = remaskTimers.current.get(variableId);
+    if (timer) {
+      clearTimeout(timer);
+      remaskTimers.current.delete(variableId);
+    }
+  }, []);
+
+  const scheduleRemask = useCallback(
+    (variableId: string) => {
+      cancelRemask(variableId);
+      remaskTimers.current.set(
+        variableId,
+        setTimeout(() => {
+          remaskTimers.current.delete(variableId);
+          hideVariable(variableId);
+        }, REMASK_DELAY_MS),
+      );
+    },
+    [cancelRemask, hideVariable],
+  );
+
+  useEffect(() => {
+    const timers = remaskTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
   const [showAllValues, setShowAllValues] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showBackupManager, setShowBackupManager] = useState(false);
@@ -80,6 +125,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
   const toggleAllVisibility = useCallback(async () => {
     if (showAllValues) {
+      remaskTimers.current.forEach(clearTimeout);
+      remaskTimers.current.clear();
       setVisibleVariables(new Set());
       setDecryptedValues(new Map());
       setShowAllValues(false);
@@ -113,7 +160,15 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     setDecryptedValues(newDecrypted);
     setVisibleVariables(allKeys);
     setShowAllValues(true);
-  }, [showAllValues, project]);
+    allKeys.forEach(scheduleRemask);
+  }, [showAllValues, project, scheduleRemask]);
+
+  // When every revealed value has re-masked, flip the button back to Show All
+  useEffect(() => {
+    if (showAllValues && visibleVariables.size === 0) {
+      setShowAllValues(false);
+    }
+  }, [showAllValues, visibleVariables]);
 
   const copyToClipboard = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -164,16 +219,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       const variableId = `${envFile.id}-${variable.key}`;
 
       if (visibleVariables.has(variableId)) {
-        setVisibleVariables((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(variableId);
-          return newSet;
-        });
-        setDecryptedValues((prev) => {
-          const newMap = new Map(prev);
-          newMap.delete(variableId);
-          return newMap;
-        });
+        cancelRemask(variableId);
+        hideVariable(variableId);
         return;
       }
 
@@ -194,8 +241,9 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       }
 
       setVisibleVariables((prev) => new Set(prev).add(variableId));
+      scheduleRemask(variableId);
     },
-    [visibleVariables, decryptedValues],
+    [visibleVariables, decryptedValues, cancelRemask, hideVariable, scheduleRemask],
   );
 
   const handleOpenFolder = useCallback(async () => {
