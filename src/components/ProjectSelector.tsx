@@ -5,8 +5,7 @@ import { StorageManager } from "../storage";
 import { FileScanner } from "../utils/fileScanner";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
-import { RefreshCw, Trash2, Plus } from "lucide-react";
+import { RefreshCw, Trash2, Plus, FileText } from "lucide-react";
 
 interface ProjectSelectorProps {
   projects: Project[];
@@ -155,11 +154,10 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                     <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
                       {project.path}
                     </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {project.envFiles.length} env file
-                        {project.envFiles.length !== 1 ? "s" : ""}
-                      </Badge>
+                    <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
+                      <FileText className="h-3 w-3" />
+                      {project.envFiles.length} env file
+                      {project.envFiles.length !== 1 ? "s" : ""}
                     </div>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
