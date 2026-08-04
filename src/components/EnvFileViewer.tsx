@@ -22,6 +22,8 @@ import {
   HardDrive,
   Plus,
   Pencil,
+  ArrowDownAZ,
+  List,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { VariableForm } from "./VariableForm";
@@ -103,6 +105,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     return () => timers.forEach(clearTimeout);
   }, []);
   const [showAllValues, setShowAllValues] = useState(false);
+  // Display-only sort - the file on disk keeps its original line order
+  const [sortAlphabetically, setSortAlphabetically] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [addingToFileId, setAddingToFileId] = useState<string | null>(null);
   const [editingVariableId, setEditingVariableId] = useState<string | null>(
@@ -594,6 +598,11 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
               const regularVariables = envFile.variables.filter(
                 (v) => !isDotenvxMetadata(v.key),
               );
+              const displayVariables = sortAlphabetically
+                ? [...regularVariables].sort((a, b) =>
+                    a.key.localeCompare(b.key),
+                  )
+                : regularVariables;
               const publicKeyVar = envFile.variables.find((v) =>
                 isDotenvxMetadata(v.key),
               );
@@ -765,6 +774,36 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                 Variables ({regularVariables.length})
                               </h4>
                             </div>
+                            <div className="flex items-center gap-2">
+                            {regularVariables.length > 1 && (
+                              <Button
+                                variant={
+                                  sortAlphabetically ? "secondary" : "outline"
+                                }
+                                size="sm"
+                                onClick={() =>
+                                  setSortAlphabetically(!sortAlphabetically)
+                                }
+                                className="h-8"
+                                title={
+                                  sortAlphabetically
+                                    ? "Show variables in file order"
+                                    : "Sort A-Z (display only, file unchanged)"
+                                }
+                              >
+                                {sortAlphabetically ? (
+                                  <>
+                                    <List className="h-4 w-4 mr-1" />
+                                    Unsort
+                                  </>
+                                ) : (
+                                  <>
+                                    <ArrowDownAZ className="h-4 w-4 mr-1" />
+                                    Sort A-Z
+                                  </>
+                                )}
+                              </Button>
+                            )}
                             {regularVariables.length > 0 &&
                               regularVariables.some((v) => v.value) && (
                                 <Button
@@ -791,9 +830,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                   )}
                                 </Button>
                               )}
+                            </div>
                           </div>
                           <div className="space-y-2">
-                              {regularVariables.map((variable, index) => {
+                              {displayVariables.map((variable, index) => {
                                 const variableId = `${envFile.id}-${variable.key}`;
                                 const isVisible =
                                   visibleVariables.has(variableId);
