@@ -180,6 +180,84 @@ async fn decrypt_env_file(file_path: String) -> Result<String, String> {
     }
 }
 
+// Decrypt a single variable in memory via `dotenvx get` - never modifies the file
+#[tauri::command]
+async fn get_decrypted_value(file_path: String, key: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let dotenvx_path = find_dotenvx();
+
+    // Check if dotenvx is installed
+    let dotenvx_check = Command::new(&dotenvx_path)
+        .arg("--version")
+        .output();
+
+    if dotenvx_check.is_err() {
+        return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
+    }
+
+    // Run dotenvx get command - decrypts to stdout, file on disk is untouched
+    let output = Command::new(&dotenvx_path)
+        .arg("get")
+        .arg(&key)
+        .arg("-f")
+        .arg(&file_path)
+        .current_dir(path.parent().unwrap_or(Path::new(".")))
+        .output()
+        .map_err(|e| format!("Failed to execute dotenvx get: {}", e))?;
+
+    if output.status.success() {
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(value.strip_suffix('\n').unwrap_or(&value).to_string())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("dotenvx get failed: {}", error_msg))
+    }
+}
+
+// Decrypt every variable in memory via `dotenvx get --format json` - never modifies the file
+#[tauri::command]
+async fn get_decrypted_values(file_path: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let dotenvx_path = find_dotenvx();
+
+    // Check if dotenvx is installed
+    let dotenvx_check = Command::new(&dotenvx_path)
+        .arg("--version")
+        .output();
+
+    if dotenvx_check.is_err() {
+        return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
+    }
+
+    // Run dotenvx get command - decrypts all keys to stdout as JSON, file on disk is untouched
+    let output = Command::new(&dotenvx_path)
+        .arg("get")
+        .arg("-f")
+        .arg(&file_path)
+        .arg("--format")
+        .arg("json")
+        .current_dir(path.parent().unwrap_or(Path::new(".")))
+        .output()
+        .map_err(|e| format!("Failed to execute dotenvx get: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("dotenvx get failed: {}", error_msg))
+    }
+}
+
 // Helper function to derive .env file path from key name
 fn get_env_file_from_key(key_name: &str, keys_dir: &Path) -> PathBuf {
     // DOTENV_PRIVATE_KEY -> .env
@@ -402,6 +480,8 @@ pub fn run() {
             open_folder,
             encrypt_env_file,
             decrypt_env_file,
+            get_decrypted_value,
+            get_decrypted_values,
             rotate_key,
             create_backup,
             get_backup,

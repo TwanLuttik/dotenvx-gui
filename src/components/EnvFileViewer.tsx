@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { EnvFile, Project } from "../types";
+import { EnvFile, EnvVariable, Project } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -45,6 +45,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   const [visibleVariables, setVisibleVariables] = useState<Set<string>>(
     new Set(),
   );
+  // Plaintext values decrypted in memory via `dotenvx get` - never written to disk
+  const [decryptedValues, setDecryptedValues] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [showAllValues, setShowAllValues] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showBackupManager, setShowBackupManager] = useState(false);
@@ -73,19 +77,41 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     pollInterval: 5000,
   });
 
-  const toggleAllVisibility = useCallback(() => {
+  const toggleAllVisibility = useCallback(async () => {
     if (showAllValues) {
       setVisibleVariables(new Set());
-    } else {
-      const allKeys = new Set<string>();
-      project?.envFiles.forEach((file) => {
-        file.variables.forEach((variable) => {
-          allKeys.add(`${file.id}-${variable.key}`);
-        });
-      });
-      setVisibleVariables(allKeys);
+      setDecryptedValues(new Map());
+      setShowAllValues(false);
+      return;
     }
-    setShowAllValues(!showAllValues);
+
+    // Decrypt encrypted files in memory via `dotenvx get --format json`
+    // so "Show All" reveals plaintext without touching the files on disk
+    const newDecrypted = new Map<string, string>();
+    for (const file of project?.envFiles || []) {
+      if (!file.variables.some((v) => v.isEncrypted)) continue;
+      try {
+        const json = await invoke<string>("get_decrypted_values", {
+          filePath: file.path,
+        });
+        const values: Record<string, string> = JSON.parse(json);
+        for (const [key, value] of Object.entries(values)) {
+          newDecrypted.set(`${file.id}-${key}`, value);
+        }
+      } catch (error) {
+        console.error(`Failed to decrypt ${file.name} in memory:`, error);
+      }
+    }
+
+    const allKeys = new Set<string>();
+    project?.envFiles.forEach((file) => {
+      file.variables.forEach((variable) => {
+        allKeys.add(`${file.id}-${variable.key}`);
+      });
+    });
+    setDecryptedValues(newDecrypted);
+    setVisibleVariables(allKeys);
+    setShowAllValues(true);
   }, [showAllValues, project]);
 
   const copyToClipboard = useCallback((text: string, key: string) => {
@@ -94,17 +120,44 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   }, []);
 
-  const toggleVariableVisibility = useCallback((variableKey: string) => {
-    setVisibleVariables((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(variableKey)) {
-        newSet.delete(variableKey);
-      } else {
-        newSet.add(variableKey);
+  const toggleVariableVisibility = useCallback(
+    async (envFile: EnvFile, variable: EnvVariable) => {
+      const variableId = `${envFile.id}-${variable.key}`;
+
+      if (visibleVariables.has(variableId)) {
+        setVisibleVariables((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(variableId);
+          return newSet;
+        });
+        setDecryptedValues((prev) => {
+          const newMap = new Map(prev);
+          newMap.delete(variableId);
+          return newMap;
+        });
+        return;
       }
-      return newSet;
-    });
-  }, []);
+
+      // Encrypted value: decrypt in memory so the eye shows plaintext,
+      // without ever rewriting the file on disk
+      if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+        try {
+          const plaintext = await invoke<string>("get_decrypted_value", {
+            filePath: envFile.path,
+            key: variable.key,
+          });
+          setDecryptedValues((prev) => new Map(prev).set(variableId, plaintext));
+        } catch (error) {
+          console.error("Failed to decrypt variable:", error);
+          alert(`Failed to decrypt ${variable.key}: ${error}`);
+          return;
+        }
+      }
+
+      setVisibleVariables((prev) => new Set(prev).add(variableId));
+    },
+    [visibleVariables, decryptedValues],
+  );
 
   const handleOpenFolder = useCallback(async () => {
     if (!project) return;
@@ -439,6 +492,11 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                   size="sm"
                                   onClick={toggleAllVisibility}
                                   className="h-8"
+                                  title={
+                                    showAllValues
+                                      ? "Hide all values"
+                                      : "Show all values (encrypted files are decrypted in memory, files untouched)"
+                                  }
                                 >
                                   {showAllValues ? (
                                     <>
@@ -494,7 +552,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <VariableValueDisplay
-                                        value={variable.value}
+                                        value={
+                                          decryptedValues.get(variableId) ??
+                                          variable.value
+                                        }
                                         isVisible={isVisible}
                                       />
                                       {variable.value && (
@@ -502,9 +563,17 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                           variant="ghost"
                                           size="sm"
                                           onClick={() =>
-                                            toggleVariableVisibility(variableId)
+                                            toggleVariableVisibility(
+                                              envFile,
+                                              variable,
+                                            )
                                           }
                                           className="h-6 w-6 p-0"
+                                          title={
+                                            variable.isEncrypted
+                                              ? "Reveal (decrypts in memory, file untouched)"
+                                              : "Reveal"
+                                          }
                                         >
                                           {isVisible ? (
                                             <EyeOff className="h-4 w-4" />
