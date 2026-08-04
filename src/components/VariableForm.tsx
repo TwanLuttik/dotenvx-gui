@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
-import { Check, X } from "lucide-react";
+import { Check, X, Lock, LockOpen } from "lucide-react";
 
 interface VariableFormProps {
   initialKey?: string;
   keyLocked?: boolean;
   initialValue?: string;
-  onSave: (key: string, value: string) => Promise<void>;
+  // When set, show a lock toggle so the user chooses encrypted vs plaintext
+  // before saving - the file's current setup provides the default
+  encryptToggle?: { initial: boolean };
+  onSave: (key: string, value: string, encrypt?: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -16,11 +19,13 @@ export const VariableForm: React.FC<VariableFormProps> = ({
   initialKey = "",
   keyLocked = false,
   initialValue = "",
+  encryptToggle,
   onSave,
   onCancel,
 }) => {
   const [key, setKey] = useState(initialKey);
   const [value, setValue] = useState(initialValue);
+  const [encrypt, setEncrypt] = useState(encryptToggle?.initial ?? false);
   const [isSaving, setIsSaving] = useState(false);
   const valueInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,7 +47,7 @@ export const VariableForm: React.FC<VariableFormProps> = ({
     if (!keyValid || isSaving) return;
     setIsSaving(true);
     try {
-      await onSave(trimmedKey, value);
+      await onSave(trimmedKey, value, encrypt);
     } finally {
       setIsSaving(false);
     }
@@ -87,6 +92,28 @@ export const VariableForm: React.FC<VariableFormProps> = ({
           className="font-mono text-sm text-muted-foreground bg-transparent border-0 border-b border-input p-0 outline-none focus:border-ring"
           style={{ width: "300px" }}
         />
+        {encryptToggle ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEncrypt((prev) => !prev)}
+            disabled={isSaving}
+            className="h-6 w-6 p-0"
+            title={
+              encrypt
+                ? "Will encrypt on save - click to keep plaintext"
+                : "Will save as plaintext - click to encrypt"
+            }
+          >
+            {encrypt ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <LockOpen className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+        ) : (
+          <span className="h-6 w-6" />
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -107,7 +134,6 @@ export const VariableForm: React.FC<VariableFormProps> = ({
         >
           <X className="h-4 w-4" />
         </Button>
-        <span className="h-6 w-6" />
       </div>
     </div>
   );

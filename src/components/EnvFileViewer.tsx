@@ -358,7 +358,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   );
 
   const handleAddVariable = useCallback(
-    async (envFile: EnvFile, key: string, value: string) => {
+    async (envFile: EnvFile, key: string, value: string, encrypt: boolean) => {
       const existing = envFile.variables.find((v) => v.key === key);
       if (existing) {
         const proceed = await confirm(
@@ -373,11 +373,29 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         if (!proceed) return;
       }
 
-      // Example files stay plaintext; overwriting keeps the variable's
-      // current encryption state; brand-new variables encrypt by default
-      const plain =
-        envFile.type === "example" ||
-        (existing ? !existing.isEncrypted : false);
+      // Example files stay plaintext; otherwise the form's lock toggle
+      // decides, defaulting to the file's current setup
+      const plain = envFile.type === "example" || !encrypt;
+
+      // Encrypting into a keyless file bootstraps a keypair - same side
+      // effect the lock icon confirms, so confirm it here too
+      const hasKeypair = envFile.variables.some((v) =>
+        isDotenvxMetadata(v.key),
+      );
+      if (!plain && !hasKeypair) {
+        const proceed = await confirm(
+          `${envFile.name} is not set up for encryption yet. Encrypting ` +
+            `${key} will add DOTENV_PUBLIC_KEY to the file and create ` +
+            `.env.keys with the private decryption key.`,
+          {
+            title: "Set up encryption?",
+            kind: "info",
+            okLabel: "Encrypt",
+            cancelLabel: "Cancel",
+          },
+        );
+        if (!proceed) return;
+      }
 
       if (await saveVariable(envFile, key, value, plain)) {
         setAddingToFileId(null);
@@ -1087,8 +1105,24 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                           </div>
                           {addingToFileId === envFile.id ? (
                             <VariableForm
-                              onSave={(key, value) =>
-                                handleAddVariable(envFile, key, value)
+                              encryptToggle={
+                                envFile.type === "example"
+                                  ? undefined
+                                  : {
+                                      // Keyed files encrypt new values by
+                                      // default; keyless files stay plaintext
+                                      initial: envFile.variables.some((v) =>
+                                        isDotenvxMetadata(v.key),
+                                      ),
+                                    }
+                              }
+                              onSave={(key, value, encrypt) =>
+                                handleAddVariable(
+                                  envFile,
+                                  key,
+                                  value,
+                                  encrypt ?? false,
+                                )
                               }
                               onCancel={() => setAddingToFileId(null)}
                             />
