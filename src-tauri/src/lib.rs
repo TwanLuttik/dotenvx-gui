@@ -358,7 +358,12 @@ async fn encrypt_env_key(file_path: String, key: String) -> Result<String, Strin
 // before it is written when the file has a public key, so plaintext never
 // touches the disk for encrypted files
 #[tauri::command]
-async fn set_env_value(file_path: String, key: String, value: String) -> Result<String, String> {
+async fn set_env_value(
+    file_path: String,
+    key: String,
+    value: String,
+    plain: bool,
+) -> Result<String, String> {
     let path = Path::new(&file_path);
 
     if !path.exists() {
@@ -376,13 +381,17 @@ async fn set_env_value(file_path: String, key: String, value: String) -> Result<
         return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
     }
 
-    // Run dotenvx set command
-    let output = Command::new(&dotenvx_path)
-        .arg("set")
+    // Run dotenvx set command; --plain writes the value without encrypting
+    let mut cmd = Command::new(&dotenvx_path);
+    cmd.arg("set")
         .arg(&key)
         .arg(&value)
         .arg("-f")
-        .arg(&file_path)
+        .arg(&file_path);
+    if plain {
+        cmd.arg("--plain");
+    }
+    let output = cmd
         .current_dir(path.parent().unwrap_or(Path::new(".")))
         .output()
         .map_err(|e| format!("Failed to execute dotenvx set: {}", e))?;

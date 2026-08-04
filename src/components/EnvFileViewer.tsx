@@ -297,16 +297,23 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   );
 
   const saveVariable = useCallback(
-    async (envFile: EnvFile, key: string, value: string): Promise<boolean> => {
+    async (
+      envFile: EnvFile,
+      key: string,
+      value: string,
+      plain: boolean,
+    ): Promise<boolean> => {
       if (!project) return false;
 
       try {
         // dotenvx set encrypts the value in-flight when the file has a
-        // public key, so plaintext never lands on disk for encrypted files
+        // public key, so plaintext never lands on disk for encrypted files;
+        // --plain preserves deliberately unencrypted variables
         await invoke<string>("set_env_value", {
           filePath: envFile.path,
           key,
           value,
+          plain,
         });
 
         // Reload the file from disk to get updated variables
@@ -331,7 +338,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
   const handleAddVariable = useCallback(
     async (envFile: EnvFile, key: string, value: string) => {
-      if (envFile.variables.some((v) => v.key === key)) {
+      const existing = envFile.variables.find((v) => v.key === key);
+      if (existing) {
         const proceed = await confirm(
           `${key} already exists in ${envFile.name}. Overwrite its value?`,
           {
@@ -344,7 +352,13 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         if (!proceed) return;
       }
 
-      if (await saveVariable(envFile, key, value)) {
+      // Example files stay plaintext; overwriting keeps the variable's
+      // current encryption state; brand-new variables encrypt by default
+      const plain =
+        envFile.type === "example" ||
+        (existing ? !existing.isEncrypted : false);
+
+      if (await saveVariable(envFile, key, value, plain)) {
         setAddingToFileId(null);
       }
     },
@@ -426,7 +440,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   const handleEditVariable = useCallback(
     async (envFile: EnvFile, variable: EnvVariable, value: string) => {
       const variableId = `${envFile.id}-${variable.key}`;
-      if (await saveVariable(envFile, variable.key, value)) {
+      // Editing preserves the variable's encryption state - a plaintext
+      // variable only becomes encrypted via the explicit lock action
+      const plain = envFile.type === "example" || !variable.isEncrypted;
+      if (await saveVariable(envFile, variable.key, value, plain)) {
         // Keep the in-memory plaintext cache in sync if this value was revealed
         setDecryptedValues((prev) =>
           prev.has(variableId) ? new Map(prev).set(variableId, value) : prev,
