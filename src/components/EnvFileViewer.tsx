@@ -571,27 +571,25 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           onValueChange={setSelectedFileId}
           className="w-full flex flex-col"
         >
-          <div className="sticky top-4 z-10">
-            <Card className="border-b p-0 py-1 px-1">
-              <TabsList className="flex flex-1 flex-wrap gap-1 justify-start bg-transparent p-0 h-auto">
+          <div className="sticky top-0 z-10 bg-background py-2">
+              <TabsList className="flex flex-wrap gap-1.5 justify-start h-auto w-fit bg-transparent p-0">
                 {tabFiles.map((envFile) => (
                   <TabsTrigger
                     key={envFile.id}
                     value={envFile.id}
-                    className="flex items-center gap-1 whitespace-nowrap px-2 py-1 text-sm h-8 hover:bg-accent hover:text-accent-foreground transition-colors flex-shrink-0"
+                    className="flex items-center gap-1.5 whitespace-nowrap px-3 py-1 text-sm h-8 border-border bg-card hover:bg-accent hover:text-accent-foreground transition-colors flex-shrink-0 data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:border-blue-500/40 data-[state=active]:shadow-none"
                   >
-                    <span>{envFile.name}</span>
-                    {envFile.environment && (
-                      <Badge variant="outline" className="text-xs">
-                        {envFile.environment}
-                      </Badge>
+                    {envFile.isEncrypted ? (
+                      <Lock className="h-3 w-3 opacity-60" />
+                    ) : (
+                      <FileText className="h-3 w-3 opacity-60" />
                     )}
+                    <span>{envFile.name}</span>
                   </TabsTrigger>
                 ))}
               </TabsList>
-            </Card>
           </div>
-          <div className="pt-4">
+          <div className="pt-2">
             {tabFiles.map((envFile) => {
               const regularVariables = envFile.variables.filter(
                 (v) => !isDotenvxMetadata(v.key),
@@ -600,12 +598,16 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                 isDotenvxMetadata(v.key),
               );
               return (
-              <TabsContent key={envFile.id} value={envFile.id} className="mt-4">
+              <TabsContent key={envFile.id} value={envFile.id} className="mt-2">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        {envFile.isEncrypted ? (
+                          <Lock className="h-5 w-5 text-muted-foreground" />
+                        ) : (
+                          <FileText className="h-5 w-5 text-muted-foreground" />
+                        )}
                         <CardTitle className="text-lg">
                           {envFile.name}
                         </CardTitle>
@@ -620,19 +622,15 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                         {/* Encryption Status Badge */}
                         <Badge
                           variant={
-                            envFile.isEncrypted ? "default" : "secondary"
+                            envFile.isEncrypted ? "default" : "outline"
                           }
-                          className="gap-1"
+                          className={
+                            envFile.isEncrypted
+                              ? ""
+                              : "border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          }
                         >
-                          {envFile.isEncrypted ? (
-                            <>
-                              <Lock className="h-3 w-3" /> Encrypted
-                            </>
-                          ) : (
-                            <>
-                              <Unlock className="h-3 w-3" /> Unencrypted
-                            </>
-                          )}
+                          {envFile.isEncrypted ? "Encrypted" : "Unencrypted"}
                         </Badge>
 
                         {/* File Type Badge */}
@@ -794,12 +792,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                 </Button>
                               )}
                           </div>
-                          {regularVariables.length === 0 ? (
-                            <p className="text-sm text-muted-foreground italic">
-                              No variables found in this file.
-                            </p>
-                          ) : (
-                            <div className="space-y-2">
+                          <div className="space-y-2">
                               {regularVariables.map((variable, index) => {
                                 const variableId = `${envFile.id}-${variable.key}`;
                                 const isVisible =
@@ -920,8 +913,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                   </div>
                                 );
                               })}
-                            </div>
-                          )}
+                          </div>
                           {addingToFileId === envFile.id ? (
                             <VariableForm
                               onSave={(key, value) =>
