@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import { Check, X } from "lucide-react";
 
@@ -22,6 +22,18 @@ export const VariableForm: React.FC<VariableFormProps> = ({
   const [key, setKey] = useState(initialKey);
   const [value, setValue] = useState(initialValue);
   const [isSaving, setIsSaving] = useState(false);
+  const valueInputRef = useRef<HTMLInputElement>(null);
+
+  // When editing, focus the value with the caret at the start so long
+  // values read from the beginning instead of scrolled to the end
+  useEffect(() => {
+    if (keyLocked && valueInputRef.current) {
+      const el = valueInputRef.current;
+      el.focus();
+      el.setSelectionRange(0, 0);
+      el.scrollLeft = 0;
+    }
+  }, [keyLocked]);
 
   const trimmedKey = key.trim();
   const keyValid = KEY_PATTERN.test(trimmedKey);
@@ -45,7 +57,9 @@ export const VariableForm: React.FC<VariableFormProps> = ({
   };
 
   return (
-    <div className="flex items-center justify-between gap-2 p-3 bg-muted/30 rounded-md border border-dashed">
+    <div className="flex items-center justify-between gap-2 p-3 bg-muted/30 rounded-md ring-1 ring-inset ring-border">
+      {/* Underline-style zero-padding inputs and three fixed button slots
+          mirror the display row's geometry so nothing shifts while editing */}
       <input
         type="text"
         placeholder="KEY"
@@ -57,7 +71,7 @@ export const VariableForm: React.FC<VariableFormProps> = ({
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
-        className="font-mono text-sm font-medium bg-transparent border rounded px-2 py-1 w-48 disabled:border-transparent disabled:px-0"
+        className="font-mono text-sm font-medium bg-transparent border-0 border-b border-input p-0 w-48 outline-none focus:border-ring disabled:border-transparent"
       />
       <div className="flex items-center gap-2">
         <input
@@ -66,11 +80,11 @@ export const VariableForm: React.FC<VariableFormProps> = ({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          autoFocus={keyLocked}
+          ref={valueInputRef}
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
-          className="font-mono text-sm text-muted-foreground bg-transparent border rounded px-2 py-1"
+          className="font-mono text-sm text-muted-foreground bg-transparent border-0 border-b border-input p-0 outline-none focus:border-ring"
           style={{ width: "300px" }}
         />
         <Button
@@ -93,6 +107,7 @@ export const VariableForm: React.FC<VariableFormProps> = ({
         >
           <X className="h-4 w-4" />
         </Button>
+        <span className="h-6 w-6" />
       </div>
     </div>
   );

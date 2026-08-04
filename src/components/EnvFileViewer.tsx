@@ -24,6 +24,7 @@ import {
   Pencil,
   ArrowDownAZ,
   List,
+  Loader2,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { VariableForm } from "./VariableForm";
@@ -113,6 +114,9 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     null,
   );
   const [editInitialValue, setEditInitialValue] = useState("");
+  // Pencil click shells out to dotenvx to prefill the plaintext - show a
+  // spinner on the clicked pencil while that runs
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
   const [showBackupManager, setShowBackupManager] = useState(false);
   const [showKeysManager, setShowKeysManager] = useState(false);
   const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
@@ -418,21 +422,26 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       const variableId = `${envFile.id}-${variable.key}`;
       let current = decryptedValues.get(variableId) ?? variable.value;
 
-      // Prefill the form with the plaintext, decrypting in memory if needed
-      if (variable.isEncrypted && !decryptedValues.has(variableId)) {
-        try {
-          current = await invoke<string>("get_decrypted_value", {
-            filePath: envFile.path,
-            key: variable.key,
-          });
-        } catch (error) {
-          console.error("Failed to decrypt variable for editing:", error);
-          current = "";
+      setEditLoadingId(variableId);
+      try {
+        // Prefill the form with the plaintext, decrypting in memory if needed
+        if (variable.isEncrypted && !decryptedValues.has(variableId)) {
+          try {
+            current = await invoke<string>("get_decrypted_value", {
+              filePath: envFile.path,
+              key: variable.key,
+            });
+          } catch (error) {
+            console.error("Failed to decrypt variable for editing:", error);
+            current = "";
+          }
         }
-      }
 
-      setEditInitialValue(current);
-      setEditingVariableId(variableId);
+        setEditInitialValue(current);
+        setEditingVariableId(variableId);
+      } finally {
+        setEditLoadingId(null);
+      }
     },
     [decryptedValues],
   );
@@ -1032,10 +1041,15 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                         onClick={() =>
                                           startEditVariable(envFile, variable)
                                         }
+                                        disabled={editLoadingId !== null}
                                         className="h-6 w-6 p-0"
-                                        title="Edit value (re-encrypted on save)"
+                                        title="Edit value"
                                       >
-                                        <Pencil className="h-4 w-4" />
+                                        {editLoadingId === variableId ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Pencil className="h-4 w-4" />
+                                        )}
                                       </Button>
                                     </div>
                                   </div>
