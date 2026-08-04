@@ -41,6 +41,10 @@ interface EnvFileViewerProps {
   onProjectUpdate: (project: Project) => void;
 }
 
+// DOTENV_PUBLIC_KEY* is dotenvx encryption metadata, not an app variable -
+// it is shown as a metadata row on the file card, not in the variables list
+const isDotenvxMetadata = (key: string) => key.startsWith("DOTENV_PUBLIC_KEY");
+
 export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   project,
   onProjectUpdate,
@@ -152,6 +156,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
         });
         const values: Record<string, string> = JSON.parse(json);
         for (const [key, value] of Object.entries(values)) {
+          if (isDotenvxMetadata(key)) continue;
           newDecrypted.set(`${file.id}-${key}`, value);
         }
       } catch (error) {
@@ -162,6 +167,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     const allKeys = new Set<string>();
     project?.envFiles.forEach((file) => {
       file.variables.forEach((variable) => {
+        if (isDotenvxMetadata(variable.key)) return;
         allKeys.add(`${file.id}-${variable.key}`);
       });
     });
@@ -535,7 +541,14 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
             </Card>
           </div>
           <div className="pt-4">
-            {project.envFiles.map((envFile) => (
+            {project.envFiles.map((envFile) => {
+              const regularVariables = envFile.variables.filter(
+                (v) => !isDotenvxMetadata(v.key),
+              );
+              const publicKeyVar = envFile.variables.find((v) =>
+                isDotenvxMetadata(v.key),
+              );
+              return (
               <TabsContent key={envFile.id} value={envFile.id} className="mt-4">
                 <Card>
                   <CardHeader>
@@ -635,6 +648,35 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                           )}
                       </div>
                     </div>
+                    {publicKeyVar && (
+                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground font-mono">
+                        <Key className="h-3 w-3" />
+                        <span>{publicKeyVar.key}:</span>
+                        <span title={publicKeyVar.value}>
+                          {publicKeyVar.value.length > 16
+                            ? `${publicKeyVar.value.slice(0, 8)}…${publicKeyVar.value.slice(-6)}`
+                            : publicKeyVar.value}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            copyToClipboard(
+                              publicKeyVar.value,
+                              `pk-${envFile.id}`,
+                            )
+                          }
+                          className="h-5 w-5 p-0"
+                          title="Copy public key"
+                        >
+                          {copiedKey === `pk-${envFile.id}` ? (
+                            <Check className="h-3.5 w-3.5 text-green-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
 
                   {/* Validation Alerts */}
@@ -696,11 +738,11 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                             <div className="flex items-center gap-2">
                               <Key className="h-4 w-4 text-muted-foreground" />
                               <h4 className="font-medium">
-                                Variables ({envFile.variables.length})
+                                Variables ({regularVariables.length})
                               </h4>
                             </div>
-                            {envFile.variables.length > 0 &&
-                              envFile.variables.some((v) => v.value) && (
+                            {regularVariables.length > 0 &&
+                              regularVariables.some((v) => v.value) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -726,13 +768,13 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                 </Button>
                               )}
                           </div>
-                          {envFile.variables.length === 0 ? (
+                          {regularVariables.length === 0 ? (
                             <p className="text-sm text-muted-foreground italic">
                               No variables found in this file.
                             </p>
                           ) : (
                             <div className="space-y-2">
-                              {envFile.variables.map((variable, index) => {
+                              {regularVariables.map((variable, index) => {
                                 const variableId = `${envFile.id}-${variable.key}`;
                                 const isVisible =
                                   visibleVariables.has(variableId);
@@ -837,23 +879,17 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                           )}
                                         </Button>
                                       )}
-                                      {variable.key !==
-                                        "DOTENV_PUBLIC_KEY" && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            startEditVariable(
-                                              envFile,
-                                              variable,
-                                            )
-                                          }
-                                          className="h-6 w-6 p-0"
-                                          title="Edit value (re-encrypted on save)"
-                                        >
-                                          <Pencil className="h-4 w-4" />
-                                        </Button>
-                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          startEditVariable(envFile, variable)
+                                        }
+                                        className="h-6 w-6 p-0"
+                                        title="Edit value (re-encrypted on save)"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
                                     </div>
                                   </div>
                                 );
@@ -884,7 +920,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                   </CardContent>
                 </Card>
               </TabsContent>
-            ))}
+              );
+            })}
           </div>
         </Tabs>
       )}

@@ -106,14 +106,25 @@ export class FileScanner {
     envFiles: EnvFile[],
     exampleFile: EnvFile,
   ): EnvFile[] {
-    const exampleKeys = new Set(exampleFile.variables.map((v) => v.key));
+    // DOTENV_PUBLIC_KEY* is dotenvx metadata, not an app variable - ignore it
+    const isDotenvxMetadata = (key: string) =>
+      key.startsWith("DOTENV_PUBLIC_KEY");
+    const exampleKeys = new Set(
+      exampleFile.variables
+        .filter((v) => !isDotenvxMetadata(v.key))
+        .map((v) => v.key),
+    );
 
     return envFiles.map((file) => {
       if (file.type === "example" || file.type === "keys") {
         return file; // Skip validation for example and keys files
       }
 
-      const fileKeys = new Set(file.variables.map((v) => v.key));
+      const fileKeys = new Set(
+        file.variables
+          .filter((v) => !isDotenvxMetadata(v.key))
+          .map((v) => v.key),
+      );
       const missingKeys = Array.from(exampleKeys).filter(
         (key) => !fileKeys.has(key),
       );
