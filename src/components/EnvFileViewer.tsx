@@ -897,7 +897,9 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                         }
                                         isVisible={isVisible}
                                       />
-                                      {variable.value && (
+                                      {/* Fixed button slots keep the value column
+                                          aligned across rows with different actions */}
+                                      {variable.value ? (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -917,8 +919,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                             <Copy className="h-4 w-4" />
                                           )}
                                         </Button>
+                                      ) : (
+                                        <span className="h-6 w-6" />
                                       )}
-                                      {variable.value && !isPlaintext && (
+                                      {variable.value && !isPlaintext ? (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -929,11 +933,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                             )
                                           }
                                           className="h-6 w-6 p-0"
-                                          title={
-                                            variable.isEncrypted
-                                              ? "Reveal (decrypts in memory, file untouched)"
-                                              : "Reveal"
-                                          }
+                                          title="Reveal (decrypts in memory, file untouched)"
                                         >
                                           {isVisible ? (
                                             <EyeOff className="h-4 w-4" />
@@ -941,6 +941,8 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                                             <Eye className="h-4 w-4" />
                                           )}
                                         </Button>
+                                      ) : (
+                                        <span className="h-6 w-6" />
                                       )}
                                       <Button
                                         variant="ghost"

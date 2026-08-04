@@ -27,10 +27,7 @@ export const VariableValueDisplay: React.FC<VariableValueDisplayProps> = ({
       autoCorrect="off"
       autoCapitalize="off"
       className="text-sm text-muted-foreground font-mono bg-transparent border-none outline-none p-0 cursor-text"
-      style={{
-        width: "300px",
-        textAlign: isVisible ? "left" : "right",
-      }}
+      style={{ width: "300px" }}
     />
   );
 };
