@@ -6,6 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { OnePasswordSettings } from "./OnePasswordSettings";
 import { useToast } from "../contexts/ToastContext";
 import { formatBytes } from "../lib/utils";
+import { AppPreferences } from "../types";
 import {
   Database,
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   HardDrive,
   RefreshCw,
   Terminal,
+  Code2,
 } from "lucide-react";
 
 interface DotenvxStatus {
@@ -27,7 +29,15 @@ interface DatabaseStats {
   databasePath: string;
 }
 
-export function Settings() {
+interface SettingsProps {
+  preferences: AppPreferences;
+  onPreferencesChange: (preferences: AppPreferences) => void;
+}
+
+export function Settings({
+  preferences,
+  onPreferencesChange,
+}: SettingsProps) {
   const { success, error } = useToast();
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [dotenvx, setDotenvx] = useState<DotenvxStatus | null>(null);
@@ -132,6 +142,37 @@ export function Settings() {
             </AlertDescription>
           </Alert>
         )}
+      </section>
+
+      <div className="border-t" />
+
+      <section className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Code2 className="size-4" />
+          Appearance
+        </div>
+        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border px-3 py-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Code editor view</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Show environment files as `KEY=value` source instead of a table.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={preferences.envFileView === "editor"}
+            onChange={(event) =>
+              onPreferencesChange({
+                ...preferences,
+                envFileView: event.target.checked ? "editor" : "table",
+              })
+            }
+            className="mt-1 size-4 shrink-0 rounded border-input"
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Open Settings anytime with ⌘,
+        </p>
       </section>
 
       <div className="border-t" />

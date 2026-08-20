@@ -1,10 +1,15 @@
-import { Project, AppState, OnePasswordSettings } from './types';
+import { Project, AppState, AppPreferences, OnePasswordSettings } from './types';
 import { normalizeProject } from './lib/project';
+
+const DEFAULT_PREFERENCES: AppPreferences = {
+  envFileView: "table",
+};
 
 // Storage abstraction layer - easily switchable to SQLite later
 export class StorageManager {
   private static readonly STORAGE_KEY = 'dotenvx-projects';
   private static readonly ONEPASSWORD_KEY = 'dotenvx-onepassword';
+  private static readonly PREFERENCES_KEY = 'dotenvx-preferences';
 
   static async saveState(state: AppState): Promise<void> {
     try {
@@ -80,5 +85,22 @@ export class StorageManager {
 
   static clearOnePasswordSettings(): void {
     localStorage.removeItem(this.ONEPASSWORD_KEY);
+  }
+
+  static loadPreferences(): AppPreferences {
+    try {
+      const stored = localStorage.getItem(this.PREFERENCES_KEY);
+      if (!stored) return { ...DEFAULT_PREFERENCES };
+      const parsed = JSON.parse(stored) as Partial<AppPreferences>;
+      return {
+        envFileView: parsed.envFileView === "editor" ? "editor" : "table",
+      };
+    } catch {
+      return { ...DEFAULT_PREFERENCES };
+    }
+  }
+
+  static savePreferences(preferences: AppPreferences): void {
+    localStorage.setItem(this.PREFERENCES_KEY, JSON.stringify(preferences));
   }
 }

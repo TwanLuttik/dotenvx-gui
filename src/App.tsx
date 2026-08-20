@@ -1,7 +1,7 @@
 import "./App.css";
 
 import { useState, useEffect } from "react";
-import { Project } from "./types";
+import { AppPreferences, Project } from "./types";
 import { StorageManager } from "./storage";
 import { defaultFolderPath, folderDisplayName, projectFolders } from "./lib/project";
 import { ProjectSelector } from "./components/ProjectSelector";
@@ -35,11 +35,29 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [isSavingToOnePassword, setIsSavingToOnePassword] = useState(false);
+  const [preferences, setPreferences] = useState<AppPreferences>(() =>
+    StorageManager.loadPreferences(),
+  );
   const { success, error } = useToast();
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== ",") return;
+      event.preventDefault();
+      setShowSettings((open) => !open);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const handlePreferencesChange = (next: AppPreferences) => {
+    StorageManager.savePreferences(next);
+    setPreferences(next);
+  };
 
   const loadInitialData = async () => {
     try {
@@ -225,6 +243,9 @@ function App() {
             >
               <SettingsIcon className="size-4" />
               Settings
+              <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                ⌘,
+              </kbd>
             </Button>
             <ThemeToggle />
           </div>
@@ -234,6 +255,7 @@ function App() {
           <EnvFileViewer
             project={selectedProject}
             selectedFolderPath={selectedFolderPath}
+            envFileView={preferences.envFileView}
             onProjectUpdate={handleProjectUpdate}
           />
         </main>
@@ -249,7 +271,10 @@ function App() {
             <DialogTitle>Settings</DialogTitle>
             <DialogClose onClick={() => setShowSettings(false)} />
           </DialogHeader>
-          <Settings />
+          <Settings
+            preferences={preferences}
+            onPreferencesChange={handlePreferencesChange}
+          />
         </DialogContent>
       </Dialog>
     </div>

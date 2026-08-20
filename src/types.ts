@@ -57,3 +57,9 @@ export interface AppState {
   projects: Project[];
   selectedProjectId: string | null;
 }
+
+export type EnvFileView = "table" | "editor";
+
+export interface AppPreferences {
+  envFileView: EnvFileView;
+}

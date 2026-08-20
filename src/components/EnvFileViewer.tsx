@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { EnvFile, Project } from "../types";
+import { EnvFile, EnvFileView, Project } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -44,16 +44,19 @@ import {
   projectFolders,
   withScannedFolders,
 } from "../lib/project";
+import { formatEnvSource } from "../lib/envSource";
 
 interface EnvFileViewerProps {
   project: Project | null;
   selectedFolderPath: string | null;
+  envFileView: EnvFileView;
   onProjectUpdate: (project: Project) => void;
 }
 
 export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   project,
   selectedFolderPath,
+  envFileView,
   onProjectUpdate,
 }) => {
   const { success, error, info } = useToast();
@@ -484,6 +487,13 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                       <p className="px-4 py-8 text-center text-sm text-muted-foreground">
                         No variables match “{query}”.
                       </p>
+                    ) : envFileView === "editor" ? (
+                      <pre className="max-h-[min(36rem,calc(100vh-22rem))] overflow-auto bg-muted/20 p-4 font-mono text-[13px] leading-6 whitespace-pre">
+                        {formatEnvSource(envFile.variables, {
+                          revealValues: showAllValues,
+                          query,
+                        })}
+                      </pre>
                     ) : (
                       <div className="divide-y">
                         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto] gap-3 px-3 py-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
