@@ -1,8 +1,10 @@
-import { Project, AppState } from './types';
+import { Project, AppState, OnePasswordSettings } from './types';
+import { normalizeProject } from './lib/project';
 
 // Storage abstraction layer - easily switchable to SQLite later
 export class StorageManager {
   private static readonly STORAGE_KEY = 'dotenvx-projects';
+  private static readonly ONEPASSWORD_KEY = 'dotenvx-onepassword';
 
   static async saveState(state: AppState): Promise<void> {
     try {
@@ -19,7 +21,13 @@ export class StorageManager {
       if (!stored) {
         return { projects: [], selectedProjectId: null };
       }
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored) as AppState;
+      return {
+        ...parsed,
+        projects: (parsed.projects ?? []).map((project) =>
+          normalizeProject(project),
+        ),
+      };
     } catch (error) {
       console.error('Failed to load state:', error);
       return { projects: [], selectedProjectId: null };
@@ -52,5 +60,25 @@ export class StorageManager {
     const state = await this.loadState();
     state.selectedProjectId = projectId;
     await this.saveState(state);
+  }
+
+  static loadOnePasswordSettings(): OnePasswordSettings | null {
+    try {
+      const stored = localStorage.getItem(this.ONEPASSWORD_KEY);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored) as OnePasswordSettings;
+      if (!parsed.accountName || !parsed.vaultId) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  static saveOnePasswordSettings(settings: OnePasswordSettings): void {
+    localStorage.setItem(this.ONEPASSWORD_KEY, JSON.stringify(settings));
+  }
+
+  static clearOnePasswordSettings(): void {
+    localStorage.removeItem(this.ONEPASSWORD_KEY);
   }
 }

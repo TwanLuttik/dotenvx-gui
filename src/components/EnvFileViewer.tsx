@@ -25,6 +25,7 @@ import {
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { KeyRotationDisplay } from "./KeyRotationDisplay";
 import { BackupManager } from "./BackupManager";
+import { FileTabScroller } from "./FileTabScroller";
 import {
   Dialog,
   DialogContent,
@@ -35,14 +36,24 @@ import {
 import { useFileWatcher } from "../hooks/useFileWatcher";
 import { FileScanner } from "../utils/fileScanner";
 import { useToast } from "../contexts/ToastContext";
+import { fileWasLastSynced } from "../lib/onepassword";
+import { formatDateTime } from "../lib/utils";
+import {
+  envFileTabLabel,
+  filesInFolder,
+  projectFolders,
+  withScannedFolders,
+} from "../lib/project";
 
 interface EnvFileViewerProps {
   project: Project | null;
+  selectedFolderPath: string | null;
   onProjectUpdate: (project: Project) => void;
 }
 
 export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   project,
+  selectedFolderPath,
   onProjectUpdate,
 }) => {
   const { success, error, info } = useToast();
@@ -54,8 +65,10 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showBackupManager, setShowBackupManager] = useState(false);
   const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
+  const folders = project ? projectFolders(project) : [];
+  const envFiles = project ? filesInFolder(project, selectedFolderPath) : [];
   const [selectedFileId, setSelectedFileId] = useState<string | null>(
-    project?.envFiles[0]?.id || null,
+    envFiles[0]?.id || null,
   );
   const [query, setQuery] = useState("");
 
@@ -68,26 +81,21 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
       return;
     }
 
-    const stillExists = project.envFiles.some((file) => file.id === selectedFileId);
+    const files = filesInFolder(project, selectedFolderPath);
+    const stillExists = files.some((file) => file.id === selectedFileId);
     if (!stillExists) {
-      setSelectedFileId(project.envFiles[0]?.id ?? null);
+      setSelectedFileId(files[0]?.id ?? null);
     }
-  }, [project, selectedFileId]);
+  }, [project, selectedFileId, selectedFolderPath]);
 
-  const selectedEnvFile = project?.envFiles.find(
-    (file) => file.id === selectedFileId,
-  );
+  const selectedEnvFile = envFiles.find((file) => file.id === selectedFileId);
 
   useFileWatcher({
     projectPath: project?.path || "",
     selectedFilePath: selectedEnvFile?.path,
-    onFilesChanged: (updatedEnvFiles) => {
+    onFoldersChanged: (updatedFolders) => {
       if (project) {
-        onProjectUpdate({
-          ...project,
-          envFiles: updatedEnvFiles,
-          lastModified: new Date().toISOString(),
-        });
+        onProjectUpdate(withScannedFolders(project, updatedFolders));
       }
     },
     pollInterval: 5000,
@@ -143,22 +151,22 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
   const reloadProject = useCallback(async () => {
     if (!project) return;
-    const updatedEnvFiles = await FileScanner.scanProjectFolder(project.path);
-    onProjectUpdate({
-      ...project,
-      envFiles: updatedEnvFiles,
-      lastModified: new Date().toISOString(),
-    });
+    const updatedFolders = await FileScanner.scanProjectFolders(project.path);
+    onProjectUpdate(withScannedFolders(project, updatedFolders));
   }, [project, onProjectUpdate]);
 
   const handleOpenFolder = useCallback(async () => {
     if (!project) return;
+    const folderPath =
+      selectedFolderPath ||
+      selectedEnvFile?.path.replace(/[/\\][^/\\]+$/, "") ||
+      project.path;
     try {
-      await invoke("open_folder", { path: project.path });
+      await invoke("open_folder", { path: folderPath });
     } catch (err) {
       error(`Failed to open folder: ${String(err)}`);
     }
-  }, [project, error]);
+  }, [project, selectedFolderPath, selectedEnvFile, error]);
 
   const handleEncrypt = useCallback(
     async (envFile: EnvFile) => {
@@ -229,18 +237,19 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
   return (
     <div className="flex h-full flex-col">
-      {project.envFiles.length === 0 ? (
+      {envFiles.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center px-8 text-center">
           <FileText className="mb-3 size-10 text-muted-foreground/60" />
           <p className="text-sm font-medium">No environment files found</p>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Add a `.env` file to the project root, then refresh the project from
-            the sidebar.
+            {selectedFolderPath
+              ? "This folder has no `.env` files. Pick another folder in the sidebar."
+              : "Add a `.env` file under this project, then refresh from the sidebar."}
           </p>
         </div>
       ) : (
         <Tabs
-          value={selectedFileId || project.envFiles[0]?.id}
+          value={selectedFileId || envFiles[0]?.id}
           onValueChange={(value) => {
             setSelectedFileId(value);
             setQuery("");
@@ -249,24 +258,34 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           }}
           className="flex h-full min-h-0 flex-col gap-0"
         >
-          <div className="flex items-center gap-2 border-b bg-muted/20 px-4 py-2">
-            <TabsList
-              variant="line"
-              className="h-auto min-w-0 flex-1 flex-wrap justify-start gap-0 bg-transparent p-0"
-            >
-              {project.envFiles.map((envFile) => (
-                <TabsTrigger
-                  key={envFile.id}
-                  value={envFile.id}
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                >
-                  <span className="font-mono">{envFile.name}</span>
-                  {envFile.isEncrypted && (
-                    <Lock className="size-3 text-primary" />
-                  )}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          <div className="flex items-center gap-2 border-b bg-background px-4 py-2">
+            <FileTabScroller activeId={selectedFileId || envFiles[0]?.id || null}>
+              <TabsList
+                variant="line"
+                className="h-9 w-max flex-nowrap justify-start gap-0 bg-transparent p-0"
+              >
+                {envFiles.map((envFile) => (
+                  <TabsTrigger
+                    key={envFile.id}
+                    value={envFile.id}
+                    className="h-8 flex-none gap-1.5 px-2.5 text-xs"
+                  >
+                    <span className="font-mono">
+                      {selectedFolderPath
+                        ? envFile.name
+                        : envFileTabLabel(
+                            project.path,
+                            envFile,
+                            folders.length,
+                          )}
+                    </span>
+                    {envFile.isEncrypted && (
+                      <Lock className="size-3 text-primary" />
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </FileTabScroller>
             <Button
               onClick={handleOpenFolder}
               variant="outline"
@@ -278,7 +297,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
             </Button>
           </div>
 
-          {project.envFiles.map((envFile) => (
+          {envFiles.map((envFile) => (
             <TabsContent
               key={envFile.id}
               value={envFile.id}
@@ -321,6 +340,13 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                     <p className="font-mono text-[11px] text-muted-foreground">
                       {envFile.path}
                     </p>
+                    {project.onePasswordLastSyncedAt &&
+                      fileWasLastSynced(project, envFile.path) && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Last synced to 1Password{" "}
+                          {formatDateTime(project.onePasswordLastSyncedAt)}
+                        </p>
+                      )}
                   </div>
 
                   {envFile.type !== "example" && envFile.type !== "keys" && (

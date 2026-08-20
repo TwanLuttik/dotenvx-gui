@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileScanner } from "../utils/fileScanner";
-import { EnvFile } from "../types";
+import { ProjectFolder } from "../types";
 
 function hashString(value: string): number {
   let hash = 0;
@@ -14,14 +14,14 @@ function hashString(value: string): number {
 interface FileWatcherOptions {
   projectPath: string;
   selectedFilePath?: string;
-  onFilesChanged: (envFiles: EnvFile[]) => void;
+  onFoldersChanged: (folders: ProjectFolder[]) => void;
   pollInterval?: number;
 }
 
 export const useFileWatcher = ({
   projectPath,
   selectedFilePath,
-  onFilesChanged,
+  onFoldersChanged,
   pollInterval = 5000,
 }: FileWatcherOptions) => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -50,15 +50,15 @@ export const useFileWatcher = ({
         const now = Date.now();
         if (now - lastScannedRef.current > 10000) {
           // Rescan every 10 seconds max
-          const envFiles = await FileScanner.scanProjectFolder(projectPath);
-          onFilesChanged(envFiles);
+          const folders = await FileScanner.scanProjectFolders(projectPath);
+          onFoldersChanged(folders);
           lastScannedRef.current = now;
         }
       }
     } catch (error) {
       console.error("Error checking for file changes:", error);
     }
-  }, [projectPath, selectedFilePath, onFilesChanged]);
+  }, [projectPath, selectedFilePath, onFoldersChanged]);
 
   useEffect(() => {
     // Initial check

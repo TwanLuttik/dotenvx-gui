@@ -3,12 +3,21 @@ import "./App.css";
 import { useState, useEffect } from "react";
 import { Project } from "./types";
 import { StorageManager } from "./storage";
+import { defaultFolderPath, folderDisplayName, projectFolders } from "./lib/project";
 import { ProjectSelector } from "./components/ProjectSelector";
 import { EnvFileViewer } from "./components/EnvFileViewer";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Settings } from "./components/Settings";
-import { KeyRound, Settings as SettingsIcon } from "lucide-react";
+import { KeyRound, Loader2, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { useToast } from "./contexts/ToastContext";
+import {
+  loadOnePasswordSettings,
+  markProjectSynced,
+  saveProjectToOnePassword,
+  secretFilePaths,
+} from "./lib/onepassword";
+import { formatDateTime } from "./lib/utils";
 import {
   Dialog,
   DialogClose,
@@ -20,8 +29,13 @@ import {
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedFolderPath, setSelectedFolderPath] = useState<string | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [isSavingToOnePassword, setIsSavingToOnePassword] = useState(false);
+  const { success, error } = useToast();
 
   useEffect(() => {
     loadInitialData();
@@ -37,6 +51,9 @@ function App() {
           (p) => p.id === state.selectedProjectId,
         );
         setSelectedProject(selectedProj || null);
+        setSelectedFolderPath(
+          selectedProj ? defaultFolderPath(selectedProj) : null,
+        );
       }
     } catch (error) {
       console.error("Failed to load initial data:", error);
@@ -45,9 +62,56 @@ function App() {
     }
   };
 
-  const handleProjectSelect = async (project: Project | null) => {
+  const handleProjectSelect = async (
+    project: Project | null,
+    folderPath?: string | null,
+  ) => {
     setSelectedProject(project);
+    if (!project) {
+      setSelectedFolderPath(null);
+    } else if (folderPath !== undefined) {
+      setSelectedFolderPath(folderPath);
+    } else {
+      const folders = projectFolders(project);
+      const stillValid =
+        selectedFolderPath &&
+        folders.some((folder) => folder.path === selectedFolderPath);
+      setSelectedFolderPath(
+        stillValid ? selectedFolderPath : defaultFolderPath(project),
+      );
+    }
     await StorageManager.setSelectedProject(project?.id || null);
+  };
+
+  const handleSaveToOnePassword = async () => {
+    if (!selectedProject) return;
+
+    if (!loadOnePasswordSettings()) {
+      setShowSettings(true);
+      error("Connect 1Password in Settings, then save again.");
+      return;
+    }
+
+    if (secretFilePaths(selectedProject).length === 0) {
+      error("No secret env files to save. Example files are skipped.");
+      return;
+    }
+
+    try {
+      setIsSavingToOnePassword(true);
+      const result = await saveProjectToOnePassword(selectedProject);
+      const updatedProject = markProjectSynced(
+        selectedProject,
+        result.itemId,
+        secretFilePaths(selectedProject),
+      );
+      await handleProjectUpdate(updatedProject);
+      success(`Saved to 1Password as ${result.title}`);
+    } catch (err) {
+      error(String(err));
+    } finally {
+      setIsSavingToOnePassword(false);
+    }
   };
 
   const handleProjectUpdate = async (updatedProject: Project) => {
@@ -78,7 +142,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      <aside className="flex w-80 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
         <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <KeyRound className="size-4" />
@@ -96,6 +160,7 @@ function App() {
         <ProjectSelector
           projects={projects}
           selectedProjectId={selectedProject?.id || null}
+          selectedFolderPath={selectedFolderPath}
           onProjectSelect={handleProjectSelect}
           onProjectsUpdate={setProjects}
         />
@@ -110,7 +175,12 @@ function App() {
                   {selectedProject.name}
                 </p>
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
-                  {selectedProject.path}
+                  {selectedFolderPath
+                    ? folderDisplayName(
+                        selectedProject.path,
+                        selectedFolderPath,
+                      )
+                    : selectedProject.path}
                 </p>
               </>
             ) : (
@@ -122,7 +192,31 @@ function App() {
               </>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            {selectedProject && (
+              <div className="flex items-center gap-2">
+                {selectedProject.onePasswordLastSyncedAt && (
+                  <p className="hidden text-right text-[11px] text-muted-foreground sm:block">
+                    Synced {formatDateTime(selectedProject.onePasswordLastSyncedAt)}
+                  </p>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveToOnePassword}
+                  disabled={isSavingToOnePassword}
+                >
+                  {isSavingToOnePassword ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <KeyRound className="size-4" />
+                  )}
+                  {selectedProject.onePasswordItemId
+                    ? "Update 1Password"
+                    : "Save to 1Password"}
+                </Button>
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -139,6 +233,7 @@ function App() {
         <main className="min-h-0 flex-1 overflow-hidden">
           <EnvFileViewer
             project={selectedProject}
+            selectedFolderPath={selectedFolderPath}
             onProjectUpdate={handleProjectUpdate}
           />
         </main>
@@ -147,7 +242,7 @@ function App() {
       <Dialog
         open={showSettings}
         onOpenChange={setShowSettings}
-        size="md"
+        size="lg"
       >
         <DialogContent>
           <DialogHeader>

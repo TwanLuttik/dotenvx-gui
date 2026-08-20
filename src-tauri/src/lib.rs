@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 mod backup;
+mod dotenvx;
+mod onepassword;
+mod scan;
 use backup::{BackupManager, Backup, BackupMetadata};
 
 #[derive(Serialize, Deserialize)]
@@ -14,25 +17,8 @@ struct DirEntry {
     is_dir: bool,
 }
 
-// Helper function to find dotenvx binary
 fn find_dotenvx() -> PathBuf {
-    // Common Homebrew installation paths
-    let homebrew_paths = vec![
-        "/opt/homebrew/bin/dotenvx",      // Apple Silicon Macs
-        "/usr/local/bin/dotenvx",         // Intel Macs
-        "/usr/local/opt/dotenvx/bin/dotenvx",
-    ];
-
-    // Check Homebrew paths first
-    for path in homebrew_paths {
-        let pb = PathBuf::from(path);
-        if pb.exists() {
-            return pb;
-        }
-    }
-
-    // Fall back to system PATH
-    PathBuf::from("dotenvx")
+    dotenvx::find_dotenvx()
 }
 
 // Rust commands for file system operations
@@ -413,7 +399,12 @@ pub fn run() {
             reset_backup_database,
             get_app_data_dir,
             get_home_dir,
-            debug_get_all_backups
+            debug_get_all_backups,
+            onepassword::onepassword_list_vaults,
+            onepassword::onepassword_create_vault,
+            onepassword::onepassword_save_project,
+            scan::find_env_files,
+            dotenvx::get_dotenvx_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

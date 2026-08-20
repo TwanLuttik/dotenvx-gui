@@ -1,55 +1,54 @@
 import { invoke } from "@tauri-apps/api/core";
-import { EnvFile, EnvVariable } from "../types";
+import { EnvFile, EnvVariable, ProjectFolder } from "../types";
 
-interface DirEntry {
+interface EnvFileHit {
+  directory: string;
   name: string;
-  is_file: boolean;
-  is_dir: boolean;
+  path: string;
 }
 
 export class FileScanner {
-  static async scanProjectFolder(projectPath: string): Promise<EnvFile[]> {
-    try {
-      const entries: DirEntry[] = await invoke("read_directory", {
-        path: projectPath,
-      });
-      let envFiles: EnvFile[] = [];
+  static async scanProjectFolders(projectPath: string): Promise<ProjectFolder[]> {
+    const hits = await invoke<EnvFileHit[]>("find_env_files", {
+      path: projectPath,
+    });
 
-      for (const entry of entries) {
-        if (entry.is_file && entry.name) {
-          const fileName = entry.name;
-          const filePath = `${projectPath}/${fileName}`;
+    const filesByDirectory = new Map<string, EnvFile[]>();
 
-          // Check for .env files (including .env.local, .env.production, etc.)
-          // Exclude .env-backups.db which is a SQLite database file
-          if (fileName.startsWith(".env") && !fileName.endsWith(".db")) {
-            const content = await this.readFile(filePath);
-            const envFile: EnvFile = {
-              id: `${projectPath}-${entry.name}`,
-              name: entry.name,
-              path: filePath,
-              type: this.getFileType(entry.name),
-              environment: this.getEnvironment(entry.name),
-              isEncrypted: this.detectEncryption(content),
-              variables: this.parseEnvContent(content),
-              lastModified: new Date().toISOString(),
-            };
-            envFiles.push(envFile);
-          }
-        }
-      }
+    for (const hit of hits) {
+      const content = await this.readFile(hit.path);
+      const envFile: EnvFile = {
+        id: hit.path,
+        name: hit.name,
+        path: hit.path,
+        type: this.getFileType(hit.name),
+        environment: this.getEnvironment(hit.name),
+        isEncrypted: this.detectEncryption(content),
+        variables: this.parseEnvContent(content),
+        lastModified: new Date().toISOString(),
+      };
 
-      // Validate keys against .env.example if it exists
-      const exampleFile = envFiles.find((file) => file.name === ".env.example");
-      if (exampleFile) {
-        envFiles = this.validateKeysAgainstExample(envFiles, exampleFile);
-      }
-
-      return envFiles;
-    } catch (error) {
-      console.error("Failed to scan project folder:", error);
-      return [];
+      const existing = filesByDirectory.get(hit.directory) ?? [];
+      existing.push(envFile);
+      filesByDirectory.set(hit.directory, existing);
     }
+
+    return Array.from(filesByDirectory.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([directory, envFiles]) => {
+        const exampleFile = envFiles.find((file) => file.name === ".env.example");
+        return {
+          path: directory,
+          envFiles: exampleFile
+            ? this.validateKeysAgainstExample(envFiles, exampleFile)
+            : envFiles,
+        };
+      });
+  }
+
+  static async scanProjectFolder(projectPath: string): Promise<EnvFile[]> {
+    const folders = await this.scanProjectFolders(projectPath);
+    return folders.flatMap((folder) => folder.envFiles);
   }
 
   private static getFileType(fileName: string): "env" | "keys" | "example" {

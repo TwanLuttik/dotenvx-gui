@@ -1,10 +1,37 @@
+export interface ProjectFolder {
+  path: string;
+  envFiles: EnvFile[];
+}
+
 export interface Project {
   id: string;
   name: string;
   path: string;
+  folders: ProjectFolder[];
   envFiles: EnvFile[];
   createdAt: string;
   lastModified: string;
+  onePasswordItemId?: string;
+  onePasswordLastSyncedAt?: string;
+  onePasswordLastSyncedFilePaths?: string[];
+}
+
+export interface OnePasswordSettings {
+  accountName: string;
+  vaultId: string;
+  vaultTitle: string;
+}
+
+export interface OnePasswordVault {
+  id: string;
+  title: string;
+  vaultType?: string;
+}
+
+export interface OnePasswordSaveResult {
+  itemId: string;
+  vaultId: string;
+  title: string;
 }
 
 export interface EnvFile {

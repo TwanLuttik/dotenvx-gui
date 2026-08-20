@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button } from "./ui/button";
 import { Alert, AlertDescription } from "./ui/alert";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { OnePasswordSettings } from "./OnePasswordSettings";
 import { useToast } from "../contexts/ToastContext";
 import { formatBytes } from "../lib/utils";
 import {
@@ -11,7 +12,14 @@ import {
   CheckCircle,
   HardDrive,
   RefreshCw,
+  Terminal,
 } from "lucide-react";
+
+interface DotenvxStatus {
+  installed: boolean;
+  version: string | null;
+  path: string | null;
+}
 
 interface DatabaseStats {
   backupCount: number;
@@ -22,13 +30,25 @@ interface DatabaseStats {
 export function Settings() {
   const { success, error } = useToast();
   const [stats, setStats] = useState<DatabaseStats | null>(null);
+  const [dotenvx, setDotenvx] = useState<DotenvxStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isResetting, setIsResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     loadDatabaseStats();
+    loadDotenvxStatus();
   }, []);
+
+  const loadDotenvxStatus = async () => {
+    try {
+      const status = await invoke<DotenvxStatus>("get_dotenvx_status");
+      setDotenvx(status);
+    } catch (err) {
+      error(`Failed to detect dotenvx: ${String(err)}`);
+      setDotenvx({ installed: false, version: null, path: null });
+    }
+  };
 
   const loadDatabaseStats = async () => {
     try {
@@ -71,8 +91,58 @@ export function Settings() {
 
   return (
     <div className="space-y-6">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Terminal className="size-4" />
+            dotenvx CLI
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void loadDotenvxStatus()}
+          >
+            <RefreshCw className="size-3.5" />
+            Recheck
+          </Button>
+        </div>
+
+        {dotenvx === null ? (
+          <p className="text-sm text-muted-foreground">Detecting dotenvx…</p>
+        ) : dotenvx.installed ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <CheckCircle className="size-4" />
+              {dotenvx.version
+                ? `Installed · v${dotenvx.version}`
+                : "Installed · version unknown"}
+            </div>
+            {dotenvx.path && (
+              <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed break-all">
+                {dotenvx.path}
+              </p>
+            )}
+          </div>
+        ) : (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription>
+              dotenvx was not found on this machine. Install it with
+              `brew install dotenvx`, then recheck.
+            </AlertDescription>
+          </Alert>
+        )}
+      </section>
+
+      <div className="border-t" />
+
+      <OnePasswordSettings />
+
+      <div className="border-t" />
+
       <p className="text-sm text-muted-foreground">
-        Local backup storage for environment files. Nothing leaves this machine.
+        Local backup storage for environment files. Nothing leaves this machine
+        except an explicit Save to 1Password.
       </p>
 
       <section className="space-y-3">
