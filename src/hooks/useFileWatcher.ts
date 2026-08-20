@@ -3,6 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { FileScanner } from "../utils/fileScanner";
 import { EnvFile } from "../types";
 
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (Math.imul(31, hash) + value.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
 interface FileWatcherOptions {
   projectPath: string;
   selectedFilePath?: string;
@@ -31,8 +39,7 @@ export const useFileWatcher = ({
         path: selectedFilePath,
       });
 
-      // Use content hash as a simple change detector
-      const contentHash = content.length;
+      const contentHash = hashString(content);
       const previousHash = lastModifiedRef.current;
 
       if (previousHash !== contentHash) {

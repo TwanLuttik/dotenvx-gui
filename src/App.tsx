@@ -7,8 +7,15 @@ import { ProjectSelector } from "./components/ProjectSelector";
 import { EnvFileViewer } from "./components/EnvFileViewer";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Settings } from "./components/Settings";
-import { Settings as SettingsIcon } from "lucide-react";
+import { KeyRound, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "./components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -45,12 +52,9 @@ function App() {
 
   const handleProjectUpdate = async (updatedProject: Project) => {
     await StorageManager.saveProject(updatedProject);
-    setSelectedProject((prev) => {
-      if (prev?.id === updatedProject.id) {
-        return updatedProject;
-      }
-      return prev;
-    });
+    setSelectedProject((prev) =>
+      prev?.id === updatedProject.id ? updatedProject : prev,
+    );
     setProjects((prev) =>
       prev.map((p) => (p.id === updatedProject.id ? updatedProject : p)),
     );
@@ -58,57 +62,101 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background text-foreground">
-        <h1 className="text-3xl font-bold mb-4">DotenvX GUI</h1>
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+        <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+          <KeyRound className="size-5" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium">Dotenvx</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Loading workspace…
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-10 bg-background border-b px-6 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Dotenvx GUI</h1>
-          <div className="flex items-center gap-2">
+    <div className="flex h-screen bg-background text-foreground">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+        <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <KeyRound className="size-4" />
+          </div>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold tracking-tight">
+              Dotenvx
+            </p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              Environment manager
+            </p>
+          </div>
+        </div>
+
+        <ProjectSelector
+          projects={projects}
+          selectedProjectId={selectedProject?.id || null}
+          onProjectSelect={handleProjectSelect}
+          onProjectsUpdate={setProjects}
+        />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-5">
+          <div className="min-w-0">
+            {selectedProject ? (
+              <>
+                <p className="truncate text-sm font-semibold">
+                  {selectedProject.name}
+                </p>
+                <p className="truncate font-mono text-[11px] text-muted-foreground">
+                  {selectedProject.path}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold">No project selected</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Import a folder to inspect its environment files
+                </p>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
             <Button
-              variant={showSettings ? "default" : "outline"}
+              variant="ghost"
               size="sm"
-              onClick={() => setShowSettings(!showSettings)}
-              className="gap-2"
+              onClick={() => setShowSettings(true)}
+              className="gap-1.5"
             >
-              <SettingsIcon className="h-4 w-4" />
+              <SettingsIcon className="size-4" />
               Settings
             </Button>
             <ThemeToggle />
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="flex flex-1 overflow-hidden pt-15">
-        {/* Sidebar */}
-        <aside className="w-80 border-r bg-sidebar">
-          <ProjectSelector
-            projects={projects}
-            selectedProjectId={selectedProject?.id || null}
-            onProjectSelect={handleProjectSelect}
-            onProjectsUpdate={setProjects}
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <EnvFileViewer
+            project={selectedProject}
+            onProjectUpdate={handleProjectUpdate}
           />
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          {showSettings ? (
-            <Settings />
-          ) : (
-            <EnvFileViewer
-              project={selectedProject}
-              onProjectUpdate={handleProjectUpdate}
-            />
-          )}
         </main>
       </div>
+
+      <Dialog
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        size="md"
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogClose onClick={() => setShowSettings(false)} />
+          </DialogHeader>
+          <Settings />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

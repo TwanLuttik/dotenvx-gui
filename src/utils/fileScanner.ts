@@ -23,14 +23,15 @@ export class FileScanner {
           // Check for .env files (including .env.local, .env.production, etc.)
           // Exclude .env-backups.db which is a SQLite database file
           if (fileName.startsWith(".env") && !fileName.endsWith(".db")) {
+            const content = await this.readFile(filePath);
             const envFile: EnvFile = {
               id: `${projectPath}-${entry.name}`,
               name: entry.name,
               path: filePath,
               type: this.getFileType(entry.name),
               environment: this.getEnvironment(entry.name),
-              isEncrypted: await this.checkIfEncrypted(filePath),
-              variables: await this.parseEnvFile(filePath),
+              isEncrypted: this.detectEncryption(content),
+              variables: this.parseEnvContent(content),
               lastModified: new Date().toISOString(),
             };
             envFiles.push(envFile);
@@ -78,27 +79,12 @@ export class FileScanner {
     return undefined;
   }
 
-  private static async checkIfEncrypted(filePath: string): Promise<boolean> {
+  private static async readFile(filePath: string): Promise<string> {
     try {
-      const content: string = await invoke("read_text_file", {
-        path: filePath,
-      });
-      return this.detectEncryption(content);
+      return await invoke<string>("read_text_file", { path: filePath });
     } catch (error) {
-      console.error(`Failed to check encryption for ${filePath}:`, error);
-      return false;
-    }
-  }
-
-  private static async parseEnvFile(filePath: string): Promise<EnvVariable[]> {
-    try {
-      const content: string = await invoke("read_text_file", {
-        path: filePath,
-      });
-      return this.parseEnvContent(content);
-    } catch (error) {
-      console.error(`Failed to parse env file ${filePath}:`, error);
-      return [];
+      console.error(`Failed to read env file ${filePath}:`, error);
+      return "";
     }
   }
 

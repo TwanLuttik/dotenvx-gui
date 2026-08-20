@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertCircle, CheckCircle, Trash2, Lock, Unlock } from "lucide-react";
+import { Lock, Unlock, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { useToast } from "../contexts/ToastContext";
+import { formatBytes, formatDateTime } from "../lib/utils";
 
 interface BackupMetadata {
   id: string;
@@ -10,12 +14,6 @@ interface BackupMetadata {
   encrypted: boolean;
   created_at: string;
   size: number;
-}
-
-interface Alert {
-  type: "success" | "error" | "info";
-  message: string;
-  id: string;
 }
 
 interface BackupManagerProps {
@@ -31,15 +29,17 @@ export function BackupManager({
   content,
   onBackupCreated,
 }: BackupManagerProps) {
+  const { success, error } = useToast();
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showEncryptionPassword, setShowEncryptionPassword] = useState(false);
+  const [encryptBackup, setEncryptBackup] = useState(false);
   const [encryptionPassword, setEncryptionPassword] = useState("");
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [expandedBackupId, setExpandedBackupId] = useState<string | null>(null);
   const [viewPassword, setViewPassword] = useState("");
   const [showViewPassword, setShowViewPassword] = useState<string | null>(null);
-  const [backupContent, setBackupContent] = useState<string>("");
+  const [backupContent, setBackupContent] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
   useEffect(() => {
     loadBackups();
@@ -52,88 +52,66 @@ export function BackupManager({
         projectId,
       });
       setBackups(backupList);
-    } catch (error) {
-      addAlert("error", `Failed to load backups: ${error}`);
+    } catch (err) {
+      error(`Failed to load backups: ${String(err)}`);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const addAlert = (type: "success" | "error" | "info", message: string) => {
-    const id = Date.now().toString();
-    setAlerts((prev) => [...prev, { type, message, id }]);
-    setTimeout(() => {
-      setAlerts((prev) => prev.filter((a) => a.id !== id));
-    }, 4000);
   };
 
   const handleCreateBackup = async () => {
     try {
       setIsLoading(true);
-      console.log("Creating backup with:", {
-        projectId,
-        filePath,
-        contentLength: content.length,
-        encrypted: showEncryptionPassword,
-      });
-
-      const result = await invoke("create_backup", {
+      await invoke("create_backup", {
         projectId,
         filePath,
         content,
-        password: showEncryptionPassword ? encryptionPassword : null,
+        password: encryptBackup ? encryptionPassword : null,
       });
 
-      console.log("Backup created:", result);
-
-      addAlert(
-        "success",
-        `Backup created ${showEncryptionPassword ? "(encrypted)" : "(unencrypted)"}`,
+      success(
+        encryptBackup ? "Encrypted backup created" : "Backup created",
       );
       setEncryptionPassword("");
-      setShowEncryptionPassword(false);
+      setEncryptBackup(false);
       await loadBackups();
       onBackupCreated?.();
-    } catch (error) {
-      console.error("Backup creation error:", error);
-      addAlert("error", `Failed to create backup: ${error}`);
+    } catch (err) {
+      error(`Failed to create backup: ${String(err)}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDeleteBackup = async (backupId: string) => {
-    if (!confirm("Are you sure you want to delete this backup?")) return;
+  const handleDeleteBackup = async () => {
+    if (!pendingDeleteId) return;
 
     try {
       setIsLoading(true);
-      await invoke("delete_backup", {
-        backupId,
-      });
-      addAlert("success", "Backup deleted successfully");
+      await invoke("delete_backup", { backupId: pendingDeleteId });
+      success("Backup deleted");
+      if (expandedBackupId === pendingDeleteId) {
+        setExpandedBackupId(null);
+        setBackupContent("");
+      }
       await loadBackups();
-    } catch (error) {
-      addAlert("error", `Failed to delete backup: ${error}`);
+    } catch (err) {
+      error(`Failed to delete backup: ${String(err)}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDeleteAllBackups = async () => {
-    if (
-      !confirm("Are you sure you want to delete all backups for this project?")
-    )
-      return;
-
     try {
       setIsLoading(true);
-      await invoke("delete_all_backups", {
-        projectId,
-      });
-      addAlert("success", "All backups deleted successfully");
+      await invoke("delete_all_backups", { projectId });
+      success("All backups deleted");
+      setExpandedBackupId(null);
+      setBackupContent("");
       await loadBackups();
-    } catch (error) {
-      addAlert("error", `Failed to delete all backups: ${error}`);
+    } catch (err) {
+      error(`Failed to delete backups: ${String(err)}`);
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +125,7 @@ export function BackupManager({
 
     try {
       setIsLoading(true);
-      const backupData = await invoke<any>("get_backup", {
+      const backupData = await invoke<{ content: string } | null>("get_backup", {
         backupId: backup.id,
         password: backup.encrypted ? viewPassword : undefined,
       });
@@ -158,136 +136,92 @@ export function BackupManager({
         setViewPassword("");
         setShowViewPassword(null);
       } else {
-        addAlert("error", "Invalid password or backup not found");
+        error("Invalid password or backup not found");
       }
-    } catch (error) {
-      addAlert("error", `Failed to view backup: ${error}`);
+    } catch (err) {
+      error(`Failed to view backup: ${String(err)}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString("en-US", { timeZone: "UTC" });
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-  };
-
   return (
-    <div className="space-y-4 p-4 bg-card rounded-lg border">
-      {/* Alerts */}
-      <div className="space-y-2">
-        {alerts.map((alert) => (
-          <div
-            key={alert.id}
-            className={`flex items-center gap-2 p-3 rounded-md text-sm ${
-              alert.type === "success"
-                ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-                : alert.type === "error"
-                  ? "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-400"
-                  : "bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
-            }`}
-          >
-            {alert.type === "success" ? (
-              <CheckCircle className="w-4 h-4" />
-            ) : (
-              <AlertCircle className="w-4 h-4" />
-            )}
-            <span>{alert.message}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Create Backup Section */}
-      <div className="space-y-3 p-3 bg-muted rounded-md">
-        <h3 className="font-semibold text-sm">Create New Backup</h3>
-
-        <div className="flex items-center gap-2">
+    <div className="space-y-5">
+      <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+        <p className="text-sm font-medium">Create backup</p>
+        <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            id="encrypt-backup"
-            checked={showEncryptionPassword}
-            onChange={(e) => setShowEncryptionPassword(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300"
+            checked={encryptBackup}
+            onChange={(event) => setEncryptBackup(event.target.checked)}
+            className="size-4 rounded border-input"
           />
-          <label htmlFor="encrypt-backup" className="text-sm cursor-pointer">
-            Encrypt backup with password
-          </label>
-        </div>
-
-        {showEncryptionPassword && (
-          <input
+          Encrypt with a password
+        </label>
+        {encryptBackup && (
+          <Input
             type="password"
-            placeholder="Enter encryption password"
+            placeholder="Encryption password"
             value={encryptionPassword}
-            onChange={(e) => setEncryptionPassword(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md text-sm bg-background"
+            onChange={(event) => setEncryptionPassword(event.target.value)}
           />
         )}
-
         <Button
           onClick={handleCreateBackup}
-          disabled={
-            isLoading || (showEncryptionPassword && !encryptionPassword)
-          }
+          disabled={isLoading || (encryptBackup && !encryptionPassword)}
           className="w-full"
         >
-          {isLoading ? "Creating..." : "Create Backup"}
+          {isLoading ? "Working…" : "Create backup"}
         </Button>
       </div>
 
-      {/* Backups List */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Backups ({backups.length})</h3>
+          <p className="text-sm font-medium">History ({backups.length})</p>
           {backups.length > 0 && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={handleDeleteAllBackups}
+              onClick={() => setConfirmDeleteAll(true)}
               disabled={isLoading}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="text-destructive hover:text-destructive"
             >
-              Delete All
+              Delete all
             </Button>
           )}
         </div>
 
         {isLoading && backups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading backups...</p>
+          <p className="text-sm text-muted-foreground">Loading backups…</p>
         ) : backups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No backups yet</p>
+          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+            No backups yet for this project
+          </p>
         ) : (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+          <div className="max-h-96 space-y-2 overflow-y-auto">
             {backups.map((backup) => (
               <div
                 key={backup.id}
-                className="border rounded-md p-3 space-y-2 bg-muted/50"
+                className="space-y-2 rounded-lg border bg-card p-3"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
                     {backup.encrypted ? (
-                      <Lock className="w-4 h-4 text-yellow-600" />
+                      <Lock className="size-4 shrink-0 text-primary" />
                     ) : (
-                      <Unlock className="w-4 h-4 text-green-600" />
+                      <Unlock className="size-4 shrink-0 text-muted-foreground" />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
                         {backup.file_path.split("/").pop()}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(backup.created_at)} •{" "}
-                        {formatSize(backup.size)}
+                        {formatDateTime(backup.created_at)} ·{" "}
+                        {formatBytes(backup.size)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex shrink-0 gap-1">
                     <Button
                       variant="outline"
                       size="sm"
@@ -298,24 +232,23 @@ export function BackupManager({
                     </Button>
                     <Button
                       variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteBackup(backup.id)}
+                      size="icon-sm"
+                      onClick={() => setPendingDeleteId(backup.id)}
                       disabled={isLoading}
-                      className="text-red-600 hover:text-red-700"
+                      className="text-destructive hover:text-destructive"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>
 
                 {showViewPassword === backup.id && backup.encrypted && (
-                  <div className="flex gap-2 pt-2">
-                    <input
+                  <div className="flex gap-2">
+                    <Input
                       type="password"
-                      placeholder="Enter password to view"
+                      placeholder="Password to view"
                       value={viewPassword}
-                      onChange={(e) => setViewPassword(e.target.value)}
-                      className="flex-1 px-3 py-2 border rounded-md text-sm bg-background"
+                      onChange={(event) => setViewPassword(event.target.value)}
                     />
                     <Button
                       size="sm"
@@ -328,21 +261,17 @@ export function BackupManager({
                 )}
 
                 {expandedBackupId === backup.id && (
-                  <div className="pt-2 space-y-2">
-                    <div className="bg-background rounded p-2 max-h-48 overflow-y-auto border">
-                      <pre className="text-xs whitespace-pre-wrap break-words font-mono">
-                        {backupContent}
-                      </pre>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setExpandedBackupId(null)}
-                      >
-                        Close
-                      </Button>
-                    </div>
+                  <div className="space-y-2">
+                    <pre className="max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap break-words">
+                      {backupContent}
+                    </pre>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setExpandedBackupId(null)}
+                    >
+                      Hide
+                    </Button>
                   </div>
                 )}
               </div>
@@ -350,6 +279,27 @@ export function BackupManager({
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+        title="Delete this backup?"
+        description="This snapshot will be permanently removed from the local database."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteBackup}
+      />
+      <ConfirmDialog
+        open={confirmDeleteAll}
+        onOpenChange={setConfirmDeleteAll}
+        title="Delete all backups?"
+        description="Every backup stored for this project will be permanently removed."
+        confirmLabel="Delete all"
+        variant="destructive"
+        onConfirm={handleDeleteAllBackups}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { RotateCw, Copy, Check } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { useToast } from "../contexts/ToastContext";
 
 interface KeyRotationDisplayProps {
   keysFile: EnvFile;
@@ -14,99 +15,100 @@ export const KeyRotationDisplay: React.FC<KeyRotationDisplayProps> = ({
   keysFile,
   onRotationComplete,
 }) => {
+  const { success, error } = useToast();
   const [isRotating, setIsRotating] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const privateKeys = keysFile.variables.filter((variable) =>
+    variable.key.includes("DOTENV_PRIVATE_KEY"),
+  );
 
   const handleRotateKey = async (variable: EnvVariable) => {
     setIsRotating(variable.key);
     try {
-      const result = await invoke<string>("rotate_key", {
+      await invoke<string>("rotate_key", {
         keysFilePath: keysFile.path,
         keyName: variable.key,
       });
-      console.log("Rotation result:", result);
+      success(`Rotated ${variable.key}`);
       onRotationComplete();
-    } catch (error) {
-      console.error("Failed to rotate key:", error);
-      alert(`Failed to rotate key: ${error}`);
+    } catch (err) {
+      error(`Failed to rotate key: ${String(err)}`);
     } finally {
       setIsRotating(null);
     }
   };
 
-  const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(null), 1600);
+    } catch (err) {
+      error(`Failed to copy: ${String(err)}`);
+    }
   };
 
+  if (privateKeys.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+        No `DOTENV_PRIVATE_KEY` entries found in this file.
+      </p>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        {keysFile.variables.map((variable, index) => {
-          const isPrivateKey = variable.key.includes("DOTENV_PRIVATE_KEY");
-          if (!isPrivateKey) return null;
-
-          return (
-            <div
-              key={index}
-              className="flex items-center justify-between p-3 bg-muted/30 rounded-md"
-            >
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-mono text-sm font-medium">
-                  {variable.key}
-                </span>
-                <Badge
-                  variant={variable.value ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {variable.value ? "Present" : "Missing"}
-                </Badge>
-                {!variable.value && (
-                  <span className="text-xs text-muted-foreground italic">
-                    (No key present - will be created on rotation)
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                {variable.value && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      copyToClipboard(variable.value, variable.key)
-                    }
-                    className="h-6 w-6 p-0"
-                    title="Copy key"
-                  >
-                    {copiedKey === variable.key ? (
-                      <Check className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRotateKey(variable)}
-                  disabled={isRotating === variable.key}
-                  className="gap-1"
-                >
-                  <RotateCw
-                    className={`h-4 w-4 ${
-                      isRotating === variable.key ? "animate-spin" : ""
-                    }`}
-                  />
-                  {isRotating === variable.key ? "Rotating..." : "Rotate"}
-                </Button>
-              </div>
+    <div className="overflow-hidden rounded-xl border bg-card">
+      {privateKeys.map((variable) => (
+        <div
+          key={variable.key}
+          className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0"
+        >
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate font-mono text-[13px] font-medium">
+                {variable.key}
+              </span>
+              <Badge variant={variable.value ? "default" : "secondary"}>
+                {variable.value ? "Present" : "Missing"}
+              </Badge>
             </div>
-          );
-        })}
-      </div>
+            {!variable.value && (
+              <p className="text-xs text-muted-foreground">
+                No key present — rotation will create one.
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {variable.value && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => copyToClipboard(variable.value, variable.key)}
+                title="Copy key"
+              >
+                {copiedKey === variable.key ? (
+                  <Check className="size-4 text-emerald-600" />
+                ) : (
+                  <Copy className="size-4" />
+                )}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleRotateKey(variable)}
+              disabled={isRotating === variable.key}
+            >
+              <RotateCw
+                className={isRotating === variable.key ? "animate-spin" : ""}
+              />
+              {isRotating === variable.key ? "Rotating…" : "Rotate"}
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

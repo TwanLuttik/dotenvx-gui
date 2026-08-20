@@ -2,7 +2,6 @@ use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 use tauri::Manager;
 
 mod backup;
@@ -240,6 +239,7 @@ fn get_backup_db_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> 
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))
+        .map(|dir| dir.join("backups.db"))
 }
 
 #[tauri::command]

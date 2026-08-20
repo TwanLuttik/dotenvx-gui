@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rand::Rng;
 use rusqlite::{params, Connection, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
@@ -85,10 +85,7 @@ impl BackupManager {
         };
 
         let conn = self.get_connection()?;
-        
-        eprintln!("Creating backup: id={}, project_id={}, file_path={}, encrypted={}, size={}", 
-                  id, project_id, file_path, is_encrypted, size);
-        
+
         conn.execute(
             "INSERT INTO backups (id, project_id, file_path, content, encrypted, created_at, size)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -102,8 +99,6 @@ impl BackupManager {
                 size
             ],
         )?;
-
-        eprintln!("Backup created successfully");
 
         Ok(Backup {
             id,
