@@ -7,7 +7,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
-import { formatDateTime, shortenPath } from "../lib/utils";
+import { shortenPath } from "../lib/utils";
+import { OnePasswordSyncStatus } from "./OnePasswordSyncStatus";
 import {
   folderDisplayName,
   projectFolders,
@@ -271,11 +272,11 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                         {project.envFiles.length} file
                         {project.envFiles.length === 1 ? "" : "s"}
                       </p>
-                      {project.onePasswordLastSyncedAt && (
-                        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                          1Password · {formatDateTime(project.onePasswordLastSyncedAt)}
-                        </p>
-                      )}
+                      <OnePasswordSyncStatus
+                        syncedAt={project.onePasswordLastSyncedAt}
+                        compact
+                        className="mt-0.5 truncate"
+                      />
                     </div>
                     <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <Button

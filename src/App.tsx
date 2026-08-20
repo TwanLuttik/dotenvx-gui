@@ -17,7 +17,7 @@ import {
   saveProjectToOnePassword,
   secretFilePaths,
 } from "./lib/onepassword";
-import { formatDateTime } from "./lib/utils";
+import { OnePasswordSyncStatus } from "./components/OnePasswordSyncStatus";
 import {
   Dialog,
   DialogClose,
@@ -213,11 +213,10 @@ function App() {
           <div className="flex items-center gap-2">
             {selectedProject && (
               <div className="flex items-center gap-2">
-                {selectedProject.onePasswordLastSyncedAt && (
-                  <p className="hidden text-right text-[11px] text-muted-foreground sm:block">
-                    Synced {formatDateTime(selectedProject.onePasswordLastSyncedAt)}
-                  </p>
-                )}
+                <OnePasswordSyncStatus
+                  syncedAt={selectedProject.onePasswordLastSyncedAt}
+                  className="hidden text-right sm:block"
+                />
                 <Button
                   variant="outline"
                   size="sm"

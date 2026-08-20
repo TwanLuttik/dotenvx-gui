@@ -37,7 +37,7 @@ import { useFileWatcher } from "../hooks/useFileWatcher";
 import { FileScanner } from "../utils/fileScanner";
 import { useToast } from "../contexts/ToastContext";
 import { fileWasLastSynced } from "../lib/onepassword";
-import { formatDateTime } from "../lib/utils";
+import { OnePasswordSyncStatus } from "./OnePasswordSyncStatus";
 import {
   envFileTabLabel,
   filesInFolder,
@@ -343,13 +343,15 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                     <p className="font-mono text-[11px] text-muted-foreground">
                       {envFile.path}
                     </p>
-                    {project.onePasswordLastSyncedAt &&
-                      fileWasLastSynced(project, envFile.path) && (
-                        <p className="text-[11px] text-muted-foreground">
-                          Last synced to 1Password{" "}
-                          {formatDateTime(project.onePasswordLastSyncedAt)}
-                        </p>
-                      )}
+                    {envFile.type !== "example" && (
+                      <OnePasswordSyncStatus
+                        syncedAt={
+                          fileWasLastSynced(project, envFile.path)
+                            ? project.onePasswordLastSyncedAt
+                            : undefined
+                        }
+                      />
+                    )}
                   </div>
 
                   {envFile.type !== "example" && envFile.type !== "keys" && (
