@@ -11,6 +11,7 @@ on:
       - "src-tauri/**"
       - "package.json"
       - "bun.lock"
+      - "scripts/**"
       - ".github/workflows/build-and-deploy.yml"
 
 # Set permissions for the workflow
@@ -32,6 +33,7 @@ jobs:
     needs: setup
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -70,24 +72,13 @@ jobs:
         run: bun install
 
       - name: Build for macOS ${{ matrix.name }}
-        run: bun run clean-target && bun run tauri build --target ${{ matrix.target }}
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Sign and Notarize macOS ${{ matrix.name }} DMG
-        if: env.APPLE_CERTIFICATE != ''
         run: |
-          for dmg in src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do
-            if [ -f "$dmg" ]; then
-              export DMG_PATH="$dmg"
-              bash scripts/sign-and-notarize.sh
-            fi
-          done
+          # Resolve identity from the uploaded cert. A mismatched
+          # APPLE_SIGNING_IDENTITY secret fails `tauri build` with:
+          # "certificate from APPLE_CERTIFICATE does not match provided identity".
+          # Notarization is only left enabled for Developer ID Application certs.
+          source scripts/prepare-apple-signing.sh
+          bun run clean-target && bun run tauri build --target ${{ matrix.target }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

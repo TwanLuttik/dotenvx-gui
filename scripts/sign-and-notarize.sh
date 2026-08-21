@@ -27,6 +27,13 @@ if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_ID" ]; then
   exit 0
 fi
 
+# Apple only notarizes apps signed with a Developer ID Application certificate.
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && [[ "$APPLE_SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
+  echo "Skipping notarization: APPLE_SIGNING_IDENTITY is not a Developer ID Application certificate"
+  echo "Current identity: $APPLE_SIGNING_IDENTITY"
+  exit 0
+fi
+
 echo "Setting up code signing certificate..."
 
 # Create temporary keychain
