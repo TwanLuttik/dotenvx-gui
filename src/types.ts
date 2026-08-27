@@ -12,6 +12,7 @@ export interface Project {
   createdAt: string;
   lastModified: string;
   onePasswordItemId?: string;
+  onePasswordVaultId?: string;
   onePasswordLastSyncedAt?: string;
   onePasswordLastSyncedFilePaths?: string[];
 }

@@ -20,6 +20,7 @@ interface ProjectSelectorProps {
   projects: Project[];
   selectedProjectId: string | null;
   selectedFolderPath: string | null;
+  onePasswordConfigured?: boolean;
   onProjectSelect: (project: Project | null, folderPath?: string | null) => void;
   onProjectsUpdate: (projects: Project[]) => void;
 }
@@ -28,6 +29,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   projects,
   selectedProjectId,
   selectedFolderPath,
+  onePasswordConfigured = false,
   onProjectSelect,
   onProjectsUpdate,
 }) => {
@@ -272,11 +274,13 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                         {project.envFiles.length} file
                         {project.envFiles.length === 1 ? "" : "s"}
                       </p>
-                      <OnePasswordSyncStatus
-                        syncedAt={project.onePasswordLastSyncedAt}
-                        compact
-                        className="mt-0.5 truncate"
-                      />
+                      {onePasswordConfigured && (
+                        <OnePasswordSyncStatus
+                          syncedAt={project.onePasswordLastSyncedAt}
+                          compact
+                          className="mt-0.5 truncate"
+                        />
+                      )}
                     </div>
                     <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <Button

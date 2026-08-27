@@ -18,21 +18,12 @@ import {
   Copy,
   Check,
   FolderOpen,
-  HardDrive,
   Search,
   FolderPlus,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { KeyRotationDisplay } from "./KeyRotationDisplay";
-import { BackupManager } from "./BackupManager";
 import { FileTabScroller } from "./FileTabScroller";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "./ui/dialog";
 import { useFileWatcher } from "../hooks/useFileWatcher";
 import { FileScanner } from "../utils/fileScanner";
 import { useToast } from "../contexts/ToastContext";
@@ -50,6 +41,7 @@ interface EnvFileViewerProps {
   project: Project | null;
   selectedFolderPath: string | null;
   envFileView: EnvFileView;
+  onePasswordConfigured?: boolean;
   onProjectUpdate: (project: Project) => void;
 }
 
@@ -57,6 +49,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   project,
   selectedFolderPath,
   envFileView,
+  onePasswordConfigured = false,
   onProjectUpdate,
 }) => {
   const { success, error, info } = useToast();
@@ -66,8 +59,6 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
   );
   const [showAllValues, setShowAllValues] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [showBackupManager, setShowBackupManager] = useState(false);
-  const [currentEnvFile, setCurrentEnvFile] = useState<EnvFile | null>(null);
   const folders = project ? projectFolders(project) : [];
   const envFiles = project ? filesInFolder(project, selectedFolderPath) : [];
   const [selectedFileId, setSelectedFileId] = useState<string | null>(
@@ -343,7 +334,7 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                     <p className="font-mono text-[11px] text-muted-foreground">
                       {envFile.path}
                     </p>
-                    {envFile.type !== "example" && (
+                    {onePasswordConfigured && envFile.type !== "example" && (
                       <OnePasswordSyncStatus
                         syncedAt={
                           fileWasLastSynced(project, envFile.path)
@@ -356,17 +347,6 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
 
                   {envFile.type !== "example" && envFile.type !== "keys" && (
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={() => {
-                          setShowBackupManager(true);
-                          setCurrentEnvFile(envFile);
-                        }}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <HardDrive className="size-4" />
-                        Backups
-                      </Button>
                       {envFile.isEncrypted ? (
                         <Button
                           onClick={() => handleDecrypt(envFile)}
@@ -576,33 +556,6 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
           ))}
         </Tabs>
       )}
-
-      <Dialog
-        open={showBackupManager}
-        onOpenChange={setShowBackupManager}
-        size="lg"
-      >
-        <DialogContent>
-          <DialogHeader>
-            <div>
-              <DialogTitle>Backups</DialogTitle>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {currentEnvFile?.name}
-              </p>
-            </div>
-            <DialogClose onClick={() => setShowBackupManager(false)} />
-          </DialogHeader>
-          {currentEnvFile && (
-            <BackupManager
-              projectId={project.id}
-              filePath={currentEnvFile.path}
-              content={currentEnvFile.variables
-                .map((variable) => `${variable.key}=${variable.value || ""}`)
-                .join("\n")}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

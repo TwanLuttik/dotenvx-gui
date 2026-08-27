@@ -3,10 +3,13 @@
 
 const sdk = require("@1password/sdk");
 const { withUniqueFileIds } = require("./onepassword-file-ids.cjs");
-
-const FILES_SECTION = "dotenvx-files";
-const META_SECTION = "dotenvx-meta";
-const PROJECT_PATH_FIELD = "project_path";
+const {
+  FILES_SECTION,
+  META_SECTION,
+  PROJECT_PATH_FIELD,
+  applyProjectMetadata,
+  isMissingItemError,
+} = require("./onepassword-save.cjs");
 
 async function readStdin() {
   const chunks = [];
@@ -109,45 +112,23 @@ async function replaceFiles(client, item, files) {
 
 async function saveProject(client, request) {
   if (request.itemId) {
+    let item;
     try {
-      let item = await client.items.get(request.vaultId, request.itemId);
-      const { files: _existingFiles, ...itemWithoutFiles } = item;
-      item = {
-        ...itemWithoutFiles,
-        title: request.title,
-        notes: request.notes,
-        tags: Array.from(new Set([...(item.tags || []), "dotenvx"])),
-        sections: [
-          ...(item.sections || []).filter(
-            (section) =>
-              section.id !== META_SECTION && section.id !== FILES_SECTION,
-          ),
-          { id: META_SECTION, title: "Project" },
-          { id: FILES_SECTION, title: "Environment files" },
-        ],
-        fields: [
-          ...(item.fields || []).filter(
-            (field) =>
-              field.id !== PROJECT_PATH_FIELD &&
-              !String(field.id || "").startsWith("file-"),
-          ),
-          {
-            id: PROJECT_PATH_FIELD,
-            title: "Project path",
-            fieldType: sdk.ItemFieldType.Text,
-            sectionId: META_SECTION,
-            value: request.projectPath,
-          },
-        ],
-      };
-      item = await client.items.put(item);
-      item = await replaceFiles(client, item, request.files);
-      return { itemId: item.id, vaultId: item.vaultId, title: item.title };
+      item = await client.items.get(request.vaultId, request.itemId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/not found|unknown item|no item/i.test(message)) {
+      if (!isMissingItemError(error)) {
         throw error;
       }
+    }
+
+    if (item) {
+      // Keep existing file refs on put. Stripping them made 1Password report
+      // the item as missing on the next save.
+      item = await client.items.put(
+        applyProjectMetadata(item, request, sdk.ItemFieldType.Text),
+      );
+      item = await replaceFiles(client, item, request.files);
+      return { itemId: item.id, vaultId: item.vaultId, title: item.title };
     }
   }
 

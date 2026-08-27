@@ -32,11 +32,13 @@ interface DatabaseStats {
 interface SettingsProps {
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
+  onOnePasswordConfiguredChange?: (configured: boolean) => void;
 }
 
 export function Settings({
   preferences,
   onPreferencesChange,
+  onOnePasswordConfiguredChange,
 }: SettingsProps) {
   const { success, error } = useToast();
   const [stats, setStats] = useState<DatabaseStats | null>(null);
@@ -177,7 +179,7 @@ export function Settings({
 
       <div className="border-t" />
 
-      <OnePasswordSettings />
+      <OnePasswordSettings onConfiguredChange={onOnePasswordConfiguredChange} />
 
       <div className="border-t" />
 

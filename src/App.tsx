@@ -8,15 +8,20 @@ import { ProjectSelector } from "./components/ProjectSelector";
 import { EnvFileViewer } from "./components/EnvFileViewer";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Settings } from "./components/Settings";
-import { KeyRound, Loader2, Settings as SettingsIcon } from "lucide-react";
+import { HardDrive, KeyRound, Loader2, Settings as SettingsIcon } from "lucide-react";
+import { BackupManager } from "./components/BackupManager";
 import { Button } from "./components/ui/button";
 import { useToast } from "./contexts/ToastContext";
 import {
+  formatOnePasswordError,
+  isOnePasswordConfigured,
   loadOnePasswordSettings,
   markProjectSynced,
+  onePasswordSavePlan,
   saveProjectToOnePassword,
   secretFilePaths,
 } from "./lib/onepassword";
+import { OnePasswordSaveDialog } from "./components/OnePasswordSaveDialog";
 import { OnePasswordSyncStatus } from "./components/OnePasswordSyncStatus";
 import {
   Dialog,
@@ -35,6 +40,11 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [isSavingToOnePassword, setIsSavingToOnePassword] = useState(false);
+  const [showOnePasswordSave, setShowOnePasswordSave] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
+  const [onePasswordConfigured, setOnePasswordConfigured] = useState(() =>
+    isOnePasswordConfigured(),
+  );
   const [preferences, setPreferences] = useState<AppPreferences>(() =>
     StorageManager.loadPreferences(),
   );
@@ -101,19 +111,36 @@ function App() {
     await StorageManager.setSelectedProject(project?.id || null);
   };
 
-  const handleSaveToOnePassword = async () => {
+  const handleSaveToOnePassword = (
+    event?: { shiftKey?: boolean },
+  ) => {
     if (!selectedProject) return;
 
     if (!loadOnePasswordSettings()) {
       setShowSettings(true);
-      error("Connect 1Password in Settings, then save again.");
+      error(formatOnePasswordError("Connect 1Password in Settings, then save again."));
       return;
     }
 
     if (secretFilePaths(selectedProject).length === 0) {
-      error("No secret env files to save. Example files are skipped.");
+      error(
+        formatOnePasswordError(
+          "No secret env files to save. Example files are skipped.",
+        ),
+      );
       return;
     }
+
+    if (event?.shiftKey) {
+      void confirmSaveToOnePassword();
+      return;
+    }
+
+    setShowOnePasswordSave(true);
+  };
+
+  const confirmSaveToOnePassword = async () => {
+    if (!selectedProject) return;
 
     try {
       setIsSavingToOnePassword(true);
@@ -122,11 +149,14 @@ function App() {
         selectedProject,
         result.itemId,
         secretFilePaths(selectedProject),
+        undefined,
+        result.vaultId,
       );
       await handleProjectUpdate(updatedProject);
+      setShowOnePasswordSave(false);
       success(`Saved to 1Password as ${result.title}`);
     } catch (err) {
-      error(String(err));
+      error(formatOnePasswordError(err));
     } finally {
       setIsSavingToOnePassword(false);
     }
@@ -179,6 +209,7 @@ function App() {
           projects={projects}
           selectedProjectId={selectedProject?.id || null}
           selectedFolderPath={selectedFolderPath}
+          onePasswordConfigured={onePasswordConfigured}
           onProjectSelect={handleProjectSelect}
           onProjectsUpdate={setProjects}
         />
@@ -210,16 +241,18 @@ function App() {
               </>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {selectedProject && (
-              <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {selectedProject && onePasswordConfigured && (
+              <>
                 <OnePasswordSyncStatus
                   syncedAt={selectedProject.onePasswordLastSyncedAt}
-                  className="hidden text-right sm:block"
+                  compact
+                  className="hidden pr-1 text-right sm:block"
                 />
                 <Button
                   variant="outline"
                   size="sm"
+                  title="Save to 1Password. Shift-click to skip confirmation."
                   onClick={handleSaveToOnePassword}
                   disabled={isSavingToOnePassword}
                 >
@@ -228,23 +261,29 @@ function App() {
                   ) : (
                     <KeyRound className="size-4" />
                   )}
-                  {selectedProject.onePasswordItemId
-                    ? "Update 1Password"
-                    : "Save to 1Password"}
+                  {selectedProject.onePasswordItemId ? "Update" : "Save"}
                 </Button>
-              </div>
+              </>
+            )}
+            {selectedProject && (
+              <Button
+                variant="outline"
+                size="sm"
+                title="Project backups"
+                onClick={() => setShowBackups(true)}
+              >
+                <HardDrive className="size-4" />
+                Backups
+              </Button>
             )}
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setShowSettings(true)}
-              className="gap-1.5"
+              title="Settings (⌘,)"
+              className="h-8 w-8"
             >
               <SettingsIcon className="size-4" />
-              Settings
-              <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                ⌘,
-              </kbd>
             </Button>
             <ThemeToggle />
           </div>
@@ -255,10 +294,42 @@ function App() {
             project={selectedProject}
             selectedFolderPath={selectedFolderPath}
             envFileView={preferences.envFileView}
+            onePasswordConfigured={onePasswordConfigured}
             onProjectUpdate={handleProjectUpdate}
           />
         </main>
       </div>
+
+      <OnePasswordSaveDialog
+        open={showOnePasswordSave}
+        plan={
+          selectedProject
+            ? onePasswordSavePlan(selectedProject, loadOnePasswordSettings())
+            : null
+        }
+        isSaving={isSavingToOnePassword}
+        onConfirm={() => void confirmSaveToOnePassword()}
+        onOpenChange={(open) => {
+          if (!isSavingToOnePassword) setShowOnePasswordSave(open);
+        }}
+      />
+
+      <Dialog open={showBackups} onOpenChange={setShowBackups} size="lg">
+        <DialogContent>
+          <DialogHeader>
+            <div>
+              <DialogTitle>Backups</DialogTitle>
+              {selectedProject && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {selectedProject.name}
+                </p>
+              )}
+            </div>
+            <DialogClose onClick={() => setShowBackups(false)} />
+          </DialogHeader>
+          {selectedProject && <BackupManager project={selectedProject} />}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showSettings}
@@ -273,6 +344,7 @@ function App() {
           <Settings
             preferences={preferences}
             onPreferencesChange={handlePreferencesChange}
+            onOnePasswordConfiguredChange={setOnePasswordConfigured}
           />
         </DialogContent>
       </Dialog>

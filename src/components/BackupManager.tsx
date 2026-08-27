@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Lock, Unlock, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -6,6 +6,14 @@ import { Input } from "./ui/input";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
 import { formatBytes, formatDateTime } from "../lib/utils";
+import { Project } from "../types";
+import {
+  backupFileGroups,
+  backupableEnvFiles,
+  envFileBackupContent,
+  togglePathSelection,
+} from "../lib/backup";
+import { relativeSecretPath } from "../lib/onepassword";
 
 interface BackupMetadata {
   id: string;
@@ -17,19 +25,23 @@ interface BackupMetadata {
 }
 
 interface BackupManagerProps {
-  projectId: string;
-  filePath: string;
-  content: string;
+  project: Project;
   onBackupCreated?: () => void;
 }
 
 export function BackupManager({
-  projectId,
-  filePath,
-  content,
+  project,
   onBackupCreated,
 }: BackupManagerProps) {
   const { success, error } = useToast();
+  const groups = useMemo(() => backupFileGroups(project), [project]);
+  const allPaths = useMemo(
+    () => backupableEnvFiles(project).map((file) => file.path),
+    [project],
+  );
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(
+    () => new Set(allPaths),
+  );
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [encryptBackup, setEncryptBackup] = useState(false);
@@ -41,15 +53,20 @@ export function BackupManager({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
+  const pathKey = allPaths.join("\0");
+  useEffect(() => {
+    setSelectedPaths(new Set(pathKey ? pathKey.split("\0") : []));
+  }, [project.id, pathKey]);
+
   useEffect(() => {
     loadBackups();
-  }, [projectId]);
+  }, [project.id]);
 
   const loadBackups = async () => {
     try {
       setIsLoading(true);
       const backupList = await invoke<BackupMetadata[]>("list_backups", {
-        projectId,
+        projectId: project.id,
       });
       setBackups(backupList);
     } catch (err) {
@@ -60,17 +77,29 @@ export function BackupManager({
   };
 
   const handleCreateBackup = async () => {
+    const files = backupableEnvFiles(project).filter((file) =>
+      selectedPaths.has(file.path),
+    );
+    if (files.length === 0) {
+      error("Select at least one file to back up.");
+      return;
+    }
+
     try {
       setIsLoading(true);
-      await invoke("create_backup", {
-        projectId,
-        filePath,
-        content,
-        password: encryptBackup ? encryptionPassword : null,
-      });
+      for (const file of files) {
+        await invoke("create_backup", {
+          projectId: project.id,
+          filePath: file.path,
+          content: envFileBackupContent(file),
+          password: encryptBackup ? encryptionPassword : null,
+        });
+      }
 
       success(
-        encryptBackup ? "Encrypted backup created" : "Backup created",
+        encryptBackup
+          ? `Encrypted backup created for ${files.length} file${files.length === 1 ? "" : "s"}`
+          : `Backup created for ${files.length} file${files.length === 1 ? "" : "s"}`,
       );
       setEncryptionPassword("");
       setEncryptBackup(false);
@@ -105,7 +134,7 @@ export function BackupManager({
   const handleDeleteAllBackups = async () => {
     try {
       setIsLoading(true);
-      await invoke("delete_all_backups", { projectId });
+      await invoke("delete_all_backups", { projectId: project.id });
       success("All backups deleted");
       setExpandedBackupId(null);
       setBackupContent("");
@@ -145,10 +174,85 @@ export function BackupManager({
     }
   };
 
+  const selectedCount = selectedPaths.size;
+
   return (
     <div className="space-y-5">
       <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-        <p className="text-sm font-medium">Create backup</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">Create backup</p>
+          <p className="text-xs text-muted-foreground">
+            {selectedCount} of {allPaths.length} selected
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Uncheck folders or files you do not want in this snapshot.
+        </p>
+
+        {groups.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+            No environment files to back up
+          </p>
+        ) : (
+          <div className="max-h-56 space-y-3 overflow-y-auto rounded-md border bg-background p-2">
+            {groups.map((group) => {
+              const groupPaths = group.files.map((file) => file.path);
+              const selectedInGroup = groupPaths.filter((path) =>
+                selectedPaths.has(path),
+              ).length;
+              const allSelected = selectedInGroup === groupPaths.length;
+              const someSelected = selectedInGroup > 0 && !allSelected;
+
+              return (
+                <div key={group.folderPath} className="space-y-1">
+                  <label className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(element) => {
+                        if (element) element.indeterminate = someSelected;
+                      }}
+                      onChange={() =>
+                        setSelectedPaths((current) =>
+                          togglePathSelection(current, groupPaths, !allSelected),
+                        )
+                      }
+                      className="size-4 rounded border-input"
+                    />
+                    {group.label}
+                  </label>
+                  <div className="space-y-0.5 pl-6">
+                    {group.files.map((file) => (
+                      <label
+                        key={file.path}
+                        className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm text-muted-foreground"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPaths.has(file.path)}
+                          onChange={() =>
+                            setSelectedPaths((current) =>
+                              togglePathSelection(
+                                current,
+                                [file.path],
+                                !current.has(file.path),
+                              ),
+                            )
+                          }
+                          className="size-4 rounded border-input"
+                        />
+                        <span className="truncate font-mono text-xs text-foreground">
+                          {file.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -168,7 +272,11 @@ export function BackupManager({
         )}
         <Button
           onClick={handleCreateBackup}
-          disabled={isLoading || (encryptBackup && !encryptionPassword)}
+          disabled={
+            isLoading ||
+            selectedCount === 0 ||
+            (encryptBackup && !encryptionPassword)
+          }
           className="w-full"
         >
           {isLoading ? "Working…" : "Create backup"}
@@ -212,8 +320,8 @@ export function BackupManager({
                       <Unlock className="size-4 shrink-0 text-muted-foreground" />
                     )}
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {backup.file_path.split("/").pop()}
+                      <p className="truncate text-sm font-medium" title={backup.file_path}>
+                        {relativeSecretPath(project.path, backup.file_path)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDateTime(backup.created_at)} ·{" "}

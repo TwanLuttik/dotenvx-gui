@@ -1,4 +1,4 @@
-import { formatDateTime } from "../lib/utils";
+import { formatDateTime, formatShortDate } from "../lib/utils";
 import { cn } from "../lib/utils";
 
 interface OnePasswordSyncStatusProps {
@@ -21,7 +21,7 @@ export function OnePasswordSyncStatus({
         )}
       >
         {compact
-          ? `1Password · ${formatDateTime(syncedAt)}`
+          ? `Synced ${formatShortDate(syncedAt)}`
           : `Synced ${formatDateTime(syncedAt)}`}
       </p>
     );

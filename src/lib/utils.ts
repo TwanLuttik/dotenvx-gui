@@ -28,6 +28,15 @@ export function formatDateTime(value: string): string {
   });
 }
 
+export function formatShortDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function shortenPath(path: string, max = 42): string {
   if (path.length <= max) return path;
   const parts = path.split("/").filter(Boolean);
