@@ -4,6 +4,11 @@
 const sdk = require("@1password/sdk");
 const { withUniqueFileIds } = require("./onepassword-file-ids.cjs");
 const {
+  isDotenvxItem,
+  matchExistingItem,
+  summarizeItem,
+} = require("./onepassword-match.cjs");
+const {
   FILES_SECTION,
   META_SECTION,
   PROJECT_PATH_FIELD,
@@ -110,6 +115,78 @@ async function replaceFiles(client, item, files) {
   return current;
 }
 
+async function getItems(client, vaultId, itemIds) {
+  if (itemIds.length === 0) return [];
+
+  if (typeof client.items.getAll === "function") {
+    try {
+      const response = await client.items.getAll(vaultId, itemIds);
+      return (response.individualResponses || [])
+        .map((entry) => entry.content)
+        .filter(Boolean);
+    } catch {
+      // Fall through to one-at-a-time fetches.
+    }
+  }
+
+  const items = [];
+  for (const itemId of itemIds) {
+    try {
+      items.push(await client.items.get(vaultId, itemId));
+    } catch {
+      // Skip items that disappeared between list and get.
+    }
+  }
+  return items;
+}
+
+async function listDotenvxItems(client, vaultId) {
+  const overviews = await client.items.list(vaultId, {
+    type: "ByState",
+    content: { active: true, archived: false },
+  });
+  const candidates = overviews.filter(isDotenvxItem);
+  return getItems(
+    client,
+    vaultId,
+    candidates.map((item) => item.id),
+  );
+}
+
+async function findExistingItem(client, vaultId, projectPath, title) {
+  const overviews = await client.items.list(vaultId, {
+    type: "ByState",
+    content: { active: true, archived: false },
+  });
+  const candidates = overviews.filter(isDotenvxItem);
+  if (candidates.length === 0) return null;
+
+  const titleMatches = title
+    ? candidates.filter((item) => item.title === title)
+    : [];
+  const toFetch = titleMatches.length > 0 ? titleMatches : candidates;
+  const items = await getItems(
+    client,
+    vaultId,
+    toFetch.map((item) => item.id),
+  );
+  return matchExistingItem(items, { projectPath, title });
+}
+
+async function updateExistingItem(client, item, request) {
+  // Keep existing file refs on put. Stripping them made 1Password report
+  // the item as missing on the next save.
+  const updated = await client.items.put(
+    applyProjectMetadata(item, request, sdk.ItemFieldType.Text),
+  );
+  const withFiles = await replaceFiles(client, updated, request.files);
+  return {
+    itemId: withFiles.id,
+    vaultId: withFiles.vaultId,
+    title: withFiles.title,
+  };
+}
+
 async function saveProject(client, request) {
   if (request.itemId) {
     let item;
@@ -122,14 +199,18 @@ async function saveProject(client, request) {
     }
 
     if (item) {
-      // Keep existing file refs on put. Stripping them made 1Password report
-      // the item as missing on the next save.
-      item = await client.items.put(
-        applyProjectMetadata(item, request, sdk.ItemFieldType.Text),
-      );
-      item = await replaceFiles(client, item, request.files);
-      return { itemId: item.id, vaultId: item.vaultId, title: item.title };
+      return updateExistingItem(client, item, request);
     }
+  }
+
+  const existing = await findExistingItem(
+    client,
+    request.vaultId,
+    request.projectPath,
+    request.title,
+  );
+  if (existing) {
+    return updateExistingItem(client, existing, request);
   }
 
   const created = await client.items.create(buildCreateParams(request));
@@ -167,6 +248,29 @@ async function main() {
       break;
     case "saveProject":
       ok(await saveProject(client, request));
+      break;
+    case "listProjectItems":
+      if (!request.vaultId) {
+        throw new Error("A 1Password vault is required");
+      }
+      ok({
+        items: (await listDotenvxItems(client, request.vaultId)).map(summarizeItem),
+      });
+      break;
+    case "findProject":
+      if (!request.vaultId) {
+        throw new Error("A 1Password vault is required");
+      }
+      ok({
+        item: summarizeItem(
+          await findExistingItem(
+            client,
+            request.vaultId,
+            request.projectPath,
+            request.title,
+          ),
+        ),
+      });
       break;
     default:
       throw new Error(`Unknown action: ${request.action}`);

@@ -15,9 +15,11 @@ import { useToast } from "./contexts/ToastContext";
 import {
   formatOnePasswordError,
   isOnePasswordConfigured,
+  linkExistingOnePasswordItem,
   loadOnePasswordSettings,
   markProjectSynced,
   onePasswordSavePlan,
+  reconcileLocalProjects,
   saveProjectToOnePassword,
   secretFilePaths,
 } from "./lib/onepassword";
@@ -111,9 +113,38 @@ function App() {
     await StorageManager.setSelectedProject(project?.id || null);
   };
 
-  const handleSaveToOnePassword = (
-    event?: { shiftKey?: boolean },
+  const persistReconciledProjects = async (
+    next: Project[],
+    previous: Project[],
   ) => {
+    const changed = next.filter((project, index) => project !== previous[index]);
+    if (changed.length === 0) return previous;
+
+    for (const project of changed) {
+      await StorageManager.saveProject(project);
+    }
+    setProjects(next);
+    setSelectedProject((current) =>
+      current
+        ? (next.find((project) => project.id === current.id) ?? current)
+        : current,
+    );
+    return next;
+  };
+
+  const handleOnePasswordConfiguredChange = async (configured: boolean) => {
+    setOnePasswordConfigured(configured);
+    if (!configured) return;
+
+    try {
+      const next = await reconcileLocalProjects(projects);
+      await persistReconciledProjects(next, projects);
+    } catch (err) {
+      error(formatOnePasswordError(err));
+    }
+  };
+
+  const handleSaveToOnePassword = async (event?: { shiftKey?: boolean }) => {
     if (!selectedProject) return;
 
     if (!loadOnePasswordSettings()) {
@@ -131,24 +162,37 @@ function App() {
       return;
     }
 
+    let project = selectedProject;
+    if (!project.onePasswordItemId) {
+      try {
+        const linked = await linkExistingOnePasswordItem(project);
+        if (linked !== project) {
+          await handleProjectUpdate(linked);
+          project = linked;
+        }
+      } catch {
+        // The save path looks up the vault item again.
+      }
+    }
+
     if (event?.shiftKey) {
-      void confirmSaveToOnePassword();
+      void confirmSaveToOnePassword(project);
       return;
     }
 
     setShowOnePasswordSave(true);
   };
 
-  const confirmSaveToOnePassword = async () => {
-    if (!selectedProject) return;
+  const confirmSaveToOnePassword = async (project = selectedProject) => {
+    if (!project) return;
 
     try {
       setIsSavingToOnePassword(true);
-      const result = await saveProjectToOnePassword(selectedProject);
+      const result = await saveProjectToOnePassword(project);
       const updatedProject = markProjectSynced(
-        selectedProject,
+        project,
         result.itemId,
-        secretFilePaths(selectedProject),
+        secretFilePaths(project),
         undefined,
         result.vaultId,
       );
@@ -344,7 +388,9 @@ function App() {
           <Settings
             preferences={preferences}
             onPreferencesChange={handlePreferencesChange}
-            onOnePasswordConfiguredChange={setOnePasswordConfigured}
+            onOnePasswordConfiguredChange={(configured) => {
+              void handleOnePasswordConfiguredChange(configured);
+            }}
           />
         </DialogContent>
       </Dialog>

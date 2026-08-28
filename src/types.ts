@@ -35,6 +35,15 @@ export interface OnePasswordSaveResult {
   title: string;
 }
 
+export interface OnePasswordVaultItem {
+  itemId: string;
+  vaultId: string;
+  title: string;
+  projectPath?: string | null;
+  fileNames?: string[];
+  updatedAt?: string | null;
+}
+
 export interface EnvFile {
   id: string;
   name: string;

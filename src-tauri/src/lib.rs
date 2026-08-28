@@ -402,6 +402,8 @@ pub fn run() {
             debug_get_all_backups,
             onepassword::onepassword_list_vaults,
             onepassword::onepassword_create_vault,
+            onepassword::onepassword_list_project_items,
+            onepassword::onepassword_find_project,
             onepassword::onepassword_save_project,
             scan::find_env_files,
             dotenvx::get_dotenvx_status

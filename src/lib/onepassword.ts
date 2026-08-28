@@ -4,6 +4,7 @@ import {
   OnePasswordSaveResult,
   OnePasswordSettings,
   OnePasswordVault,
+  OnePasswordVaultItem,
   Project,
 } from "../types";
 import { StorageManager } from "../storage";
@@ -138,6 +139,107 @@ export function onePasswordItemTitle(projectName: string): string {
   return `Dotenvx / ${projectName}`;
 }
 
+function normalizeProjectPath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function vaultItemTime(item: OnePasswordVaultItem): number {
+  const time = item.updatedAt ? Date.parse(item.updatedAt) : NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function matchVaultItemForProject(
+  items: OnePasswordVaultItem[],
+  project: Pick<Project, "name" | "path">,
+): OnePasswordVaultItem | null {
+  const projectPath = normalizeProjectPath(project.path);
+  const title = onePasswordItemTitle(project.name);
+
+  const byPath = items.filter(
+    (item) =>
+      item.projectPath &&
+      normalizeProjectPath(item.projectPath) === projectPath,
+  );
+  if (byPath.length === 1) return byPath[0];
+  if (byPath.length > 1) {
+    const titled = byPath.filter((item) => item.title === title);
+    return [...(titled.length ? titled : byPath)].sort(
+      (left, right) => vaultItemTime(right) - vaultItemTime(left),
+    )[0];
+  }
+
+  const byTitle = items.filter((item) => item.title === title);
+  if (byTitle.length === 1) return byTitle[0];
+  if (byTitle.length > 1) {
+    return [...byTitle].sort(
+      (left, right) => vaultItemTime(right) - vaultItemTime(left),
+    )[0];
+  }
+  return null;
+}
+
+export function vaultFilePath(projectPath: string, fileName: string): string {
+  const root = normalizeProjectPath(projectPath);
+  const name = fileName.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `${root}/${name}`;
+}
+
+export function applyVaultItemToProject(
+  project: Project,
+  item: OnePasswordVaultItem,
+): Project {
+  if (project.onePasswordItemId) return project;
+
+  const filePaths = (item.fileNames ?? []).map((name) =>
+    vaultFilePath(project.path, name),
+  );
+
+  return {
+    ...project,
+    onePasswordItemId: item.itemId,
+    onePasswordVaultId: item.vaultId,
+    onePasswordLastSyncedAt:
+      project.onePasswordLastSyncedAt ?? item.updatedAt ?? undefined,
+    onePasswordLastSyncedFilePaths:
+      project.onePasswordLastSyncedFilePaths ?? filePaths,
+  };
+}
+
+export function reconcileProjectsWithVaultItems(
+  projects: Project[],
+  items: OnePasswordVaultItem[],
+): Project[] {
+  return projects.map((project) => {
+    if (project.onePasswordItemId) return project;
+    const item = matchVaultItemForProject(items, project);
+    return item ? applyVaultItemToProject(project, item) : project;
+  });
+}
+
+export async function listOnePasswordProjectItems(
+  accountName: string,
+  vaultId: string,
+): Promise<OnePasswordVaultItem[]> {
+  return invoke<OnePasswordVaultItem[]>("onepassword_list_project_items", {
+    accountName: accountName.trim(),
+    vaultId,
+  });
+}
+
+export async function findOnePasswordProject(
+  accountName: string,
+  vaultId: string,
+  projectName: string,
+  projectPath: string,
+): Promise<OnePasswordVaultItem | null> {
+  return invoke<OnePasswordVaultItem | null>("onepassword_find_project", {
+    accountName: accountName.trim(),
+    vaultId,
+    projectName,
+    projectPath,
+  });
+}
+
 export function relativeSecretPath(projectPath: string, filePath: string): string {
   const normalize = (value: string) =>
     value.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -180,6 +282,35 @@ export function onePasswordSavePlan(
     vaultTitle: settings?.vaultTitle || "1Password",
     files,
   };
+}
+
+export async function linkExistingOnePasswordItem(
+  project: Project,
+): Promise<Project> {
+  if (project.onePasswordItemId) return project;
+  const settings = loadOnePasswordSettings();
+  if (!settings) return project;
+
+  const item = await findOnePasswordProject(
+    settings.accountName,
+    project.onePasswordVaultId ?? settings.vaultId,
+    project.name,
+    project.path,
+  );
+  return item ? applyVaultItemToProject(project, item) : project;
+}
+
+export async function reconcileLocalProjects(
+  projects: Project[],
+): Promise<Project[]> {
+  const settings = loadOnePasswordSettings();
+  if (!settings || projects.length === 0) return projects;
+
+  const items = await listOnePasswordProjectItems(
+    settings.accountName,
+    settings.vaultId,
+  );
+  return reconcileProjectsWithVaultItems(projects, items);
 }
 
 export function saveProjectToOnePassword(

@@ -12,6 +12,21 @@ pub struct OnePasswordVault {
     pub vault_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct OnePasswordVaultItem {
+    #[serde(rename = "itemId")]
+    pub item_id: String,
+    #[serde(rename = "vaultId")]
+    pub vault_id: String,
+    pub title: String,
+    #[serde(rename = "projectPath", default)]
+    pub project_path: Option<String>,
+    #[serde(rename = "fileNames", default)]
+    pub file_names: Option<Vec<String>>,
+    #[serde(rename = "updatedAt", default)]
+    pub updated_at: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct BridgeResponse {
     ok: bool,
@@ -23,6 +38,10 @@ struct BridgeResponse {
     #[serde(rename = "vaultId")]
     vault_id: Option<String>,
     title: Option<String>,
+    #[serde(default)]
+    item: Option<OnePasswordVaultItem>,
+    #[serde(default)]
+    items: Option<Vec<OnePasswordVaultItem>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -317,6 +336,44 @@ pub async fn onepassword_save_project(
         vault_id: response.vault_id.unwrap_or(vault_id),
         title: response.title.unwrap_or(title),
     })
+}
+
+#[tauri::command]
+pub async fn onepassword_list_project_items(
+    app_handle: tauri::AppHandle,
+    account_name: String,
+    vault_id: String,
+) -> Result<Vec<OnePasswordVaultItem>, String> {
+    let response = run_bridge(
+        &app_handle,
+        serde_json::json!({
+            "action": "listProjectItems",
+            "accountName": account_name,
+            "vaultId": vault_id,
+        }),
+    )?;
+    Ok(response.items.unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn onepassword_find_project(
+    app_handle: tauri::AppHandle,
+    account_name: String,
+    vault_id: String,
+    project_name: String,
+    project_path: String,
+) -> Result<Option<OnePasswordVaultItem>, String> {
+    let response = run_bridge(
+        &app_handle,
+        serde_json::json!({
+            "action": "findProject",
+            "accountName": account_name,
+            "vaultId": vault_id,
+            "title": format!("Dotenvx / {project_name}"),
+            "projectPath": project_path,
+        }),
+    )?;
+    Ok(response.item)
 }
 
 #[cfg(test)]

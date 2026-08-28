@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { Project } from "../types";
 import {
+  applyVaultItemToProject,
   fileWasLastSynced,
   formatOnePasswordError,
   isOnePasswordConfigured,
+  linkExistingOnePasswordItem,
   markProjectSynced,
+  matchVaultItemForProject,
   onePasswordSavePlan,
+  reconcileLocalProjects,
+  reconcileProjectsWithVaultItems,
 } from "./onepassword";
 
 function project(): Project {
@@ -202,6 +207,115 @@ describe("onePasswordSavePlan", () => {
       { path: "/repo/.env.production", label: ".env.production", change: "add" },
       { path: "/repo/.env.staging", label: ".env.staging", change: "remove" },
     ]);
+  });
+});
+
+describe("matchVaultItemForProject", () => {
+  const items = [
+    {
+      itemId: "item-path",
+      vaultId: "vault-1",
+      title: "Dotenvx / renamed",
+      projectPath: "/repo/",
+      fileNames: [".env", ".env.keys"],
+      updatedAt: "2026-08-20T12:00:00.000Z",
+    },
+    {
+      itemId: "item-title",
+      vaultId: "vault-1",
+      title: "Dotenvx / other",
+      projectPath: "/other",
+      fileNames: [".env"],
+      updatedAt: "2026-08-19T12:00:00.000Z",
+    },
+  ];
+
+  test("matches the selected vault item by project path first", () => {
+    expect(matchVaultItemForProject(items, project())?.itemId).toBe("item-path");
+  });
+
+  test("falls back to the Dotenvx title when the path is missing", () => {
+    expect(
+      matchVaultItemForProject(
+        [
+          {
+            itemId: "item-title",
+            vaultId: "vault-1",
+            title: "Dotenvx / repo",
+            projectPath: null,
+            fileNames: [".env"],
+            updatedAt: "2026-08-20T12:00:00.000Z",
+          },
+        ],
+        project(),
+      )?.itemId,
+    ).toBe("item-title");
+  });
+});
+
+describe("reconcileProjectsWithVaultItems", () => {
+  test("links unsynced projects to an existing vault item", () => {
+    const [linked] = reconcileProjectsWithVaultItems(
+      [project()],
+      [
+        {
+          itemId: "item-1",
+          vaultId: "vault-1",
+          title: "Dotenvx / repo",
+          projectPath: "/repo",
+          fileNames: [".env", "apps/api/.env"],
+          updatedAt: "2026-08-20T12:00:00.000Z",
+        },
+      ],
+    );
+
+    expect(linked.onePasswordItemId).toBe("item-1");
+    expect(linked.onePasswordVaultId).toBe("vault-1");
+    expect(linked.onePasswordLastSyncedAt).toBe("2026-08-20T12:00:00.000Z");
+    expect(linked.onePasswordLastSyncedFilePaths).toEqual([
+      "/repo/.env",
+      "/repo/apps/api/.env",
+    ]);
+  });
+
+  test("does not replace an item id that is already stored locally", () => {
+    const already = {
+      ...project(),
+      onePasswordItemId: "local-item",
+      onePasswordLastSyncedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const [linked] = reconcileProjectsWithVaultItems(
+      [already],
+      [
+        {
+          itemId: "vault-item",
+          vaultId: "vault-1",
+          title: "Dotenvx / repo",
+          projectPath: "/repo",
+          fileNames: [".env"],
+          updatedAt: "2026-08-20T12:00:00.000Z",
+        },
+      ],
+    );
+
+    expect(linked).toBe(already);
+    expect(applyVaultItemToProject(already, {
+      itemId: "vault-item",
+      vaultId: "vault-1",
+      title: "Dotenvx / repo",
+      projectPath: "/repo",
+      fileNames: [".env"],
+      updatedAt: "2026-08-20T12:00:00.000Z",
+    }).onePasswordItemId).toBe("local-item");
+  });
+
+  test("skips a 1Password lookup when the project is already linked", async () => {
+    const already = { ...project(), onePasswordItemId: "item-1" };
+    await expect(linkExistingOnePasswordItem(already)).resolves.toBe(already);
+  });
+
+  test("skips a vault scan when there are no projects", async () => {
+    await expect(reconcileLocalProjects([])).resolves.toEqual([]);
   });
 });
 
