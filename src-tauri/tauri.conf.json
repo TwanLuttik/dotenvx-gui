@@ -34,10 +34,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../scripts/onepassword-bridge.cjs",
-      "../node_modules/@1password/sdk/**/*",
-      "../node_modules/@1password/sdk-core/**/*"
-    ]
+    "resources": {
+      "../scripts/onepassword-bridge.cjs": "onepassword-bridge.cjs",
+      "../scripts/onepassword-file-ids.cjs": "onepassword-file-ids.cjs",
+      "../scripts/onepassword-save.cjs": "onepassword-save.cjs",
+      "../node_modules/@1password/sdk/": "node_modules/@1password/sdk/",
+      "../node_modules/@1password/sdk-core/": "node_modules/@1password/sdk-core/"
+    }
   }
 }

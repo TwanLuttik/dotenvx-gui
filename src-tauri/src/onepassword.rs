@@ -106,14 +106,32 @@ fn bridge_paths(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
         .path()
         .resource_dir()
         .map_err(|e| format!("Failed to resolve resource directory: {e}"))?;
-    let prod_script = resource_dir.join("onepassword-bridge.cjs");
-    let prod_modules = resource_dir.join("node_modules");
 
-    if prod_script.exists() {
-        return Ok((prod_script, prod_modules));
-    }
+    resolve_production_bridge_paths(&resource_dir)
+        .ok_or_else(|| "Could not find the 1Password bridge script.".to_string())
+}
 
-    Err("Could not find the 1Password bridge script.".to_string())
+fn production_bridge_candidates(resource_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
+    vec![
+        (
+            resource_dir.join("onepassword-bridge.cjs"),
+            resource_dir.join("node_modules"),
+        ),
+        // Array-style bundle.resources rewrite `../` to `_up_`.
+        (
+            resource_dir
+                .join("_up_")
+                .join("scripts")
+                .join("onepassword-bridge.cjs"),
+            resource_dir.join("_up_").join("node_modules"),
+        ),
+    ]
+}
+
+fn resolve_production_bridge_paths(resource_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    production_bridge_candidates(resource_dir)
+        .into_iter()
+        .find(|(script, _)| script.is_file())
 }
 
 fn run_bridge(
@@ -303,7 +321,9 @@ pub async fn onepassword_save_project(
 
 #[cfg(test)]
 mod tests {
-    use super::relative_file_path;
+    use super::{relative_file_path, resolve_production_bridge_paths};
+    use std::fs;
+    use std::path::Path;
 
     #[test]
     fn uses_path_under_the_project_root() {
@@ -320,5 +340,80 @@ mod tests {
             relative_file_path("/repo", "/other/apps/api/.env"),
             ".env"
         );
+    }
+
+    fn with_temp_dir(test: impl FnOnce(&Path)) {
+        let dir = std::env::temp_dir().join(format!("dotenvx-op-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        test(&dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, "").unwrap();
+    }
+
+    #[test]
+    fn finds_the_bridge_in_tauri_parent_resource_layout() {
+        with_temp_dir(|resource_dir| {
+            let script = resource_dir
+                .join("_up_")
+                .join("scripts")
+                .join("onepassword-bridge.cjs");
+            let modules = resource_dir.join("_up_").join("node_modules");
+            touch(&script);
+            fs::create_dir_all(&modules).unwrap();
+
+            assert_eq!(
+                resolve_production_bridge_paths(resource_dir),
+                Some((script, modules))
+            );
+        });
+    }
+
+    #[test]
+    fn finds_the_bridge_when_resources_are_mapped_to_the_bundle_root() {
+        with_temp_dir(|resource_dir| {
+            let script = resource_dir.join("onepassword-bridge.cjs");
+            let modules = resource_dir.join("node_modules");
+            touch(&script);
+            fs::create_dir_all(&modules).unwrap();
+
+            assert_eq!(
+                resolve_production_bridge_paths(resource_dir),
+                Some((script, modules))
+            );
+        });
+    }
+
+    #[test]
+    fn prefers_mapped_bundle_root_over_parent_resource_layout() {
+        with_temp_dir(|resource_dir| {
+            let mapped_script = resource_dir.join("onepassword-bridge.cjs");
+            let mapped_modules = resource_dir.join("node_modules");
+            touch(&mapped_script);
+            fs::create_dir_all(&mapped_modules).unwrap();
+            touch(
+                &resource_dir
+                    .join("_up_")
+                    .join("scripts")
+                    .join("onepassword-bridge.cjs"),
+            );
+
+            assert_eq!(
+                resolve_production_bridge_paths(resource_dir),
+                Some((mapped_script, mapped_modules))
+            );
+        });
+    }
+
+    #[test]
+    fn returns_none_when_the_bridge_is_not_bundled() {
+        with_temp_dir(|resource_dir| {
+            assert_eq!(resolve_production_bridge_paths(resource_dir), None);
+        });
     }
 }
