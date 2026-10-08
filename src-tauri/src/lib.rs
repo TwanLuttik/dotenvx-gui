@@ -220,6 +220,58 @@ async fn rotate_key(keys_file_path: String, key_name: String) -> Result<String, 
     }
 }
 
+#[derive(Serialize)]
+struct EnvfileCheckResult {
+    env_file: Option<String>,
+    valid: bool,
+    output: String,
+}
+
+/// Validates env values against the `Envfile` next to `envfile_path` with `dotenvx check`.
+/// `env_file` limits the check to one env file in that folder; `None` uses dotenvx defaults.
+#[tauri::command]
+async fn check_envfile(
+    envfile_path: String,
+    env_file: Option<String>,
+) -> Result<EnvfileCheckResult, String> {
+    let envfile = Path::new(&envfile_path);
+    if !envfile.is_file() {
+        return Err(format!("Envfile does not exist: {}", envfile_path));
+    }
+    let dir = envfile.parent().unwrap_or(Path::new("."));
+
+    let dotenvx_path = find_dotenvx();
+
+    // Check if dotenvx is installed
+    let dotenvx_check = Command::new(&dotenvx_path)
+        .arg("--version")
+        .output();
+
+    if dotenvx_check.is_err() {
+        return Err("dotenvx is not installed. Please install dotenvx first: brew install dotenvx".to_string());
+    }
+
+    let mut cmd = Command::new(&dotenvx_path);
+    cmd.arg("check").current_dir(dir).env("NO_COLOR", "1");
+    if let Some(file) = &env_file {
+        cmd.arg("-f").arg(file);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to execute dotenvx check: {}", e))?;
+
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(EnvfileCheckResult {
+        env_file,
+        valid: output.status.success(),
+        output: text.trim().to_string(),
+    })
+}
+
 fn get_backup_db_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     app_handle
         .path()
@@ -389,6 +441,7 @@ pub fn run() {
             encrypt_env_file,
             decrypt_env_file,
             rotate_key,
+            check_envfile,
             create_backup,
             get_backup,
             list_backups,

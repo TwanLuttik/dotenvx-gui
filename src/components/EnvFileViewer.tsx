@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { EnvFile, EnvFileView, Project } from "../types";
+import { EnvFile, EnvFileView, EnvfileCheckResult, Project } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -20,6 +20,7 @@ import {
   FolderOpen,
   Search,
   FolderPlus,
+  ShieldCheck,
 } from "lucide-react";
 import { VariableValueDisplay } from "./VariableValueDisplay";
 import { KeyRotationDisplay } from "./KeyRotationDisplay";
@@ -65,6 +66,9 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     envFiles[0]?.id || null,
   );
   const [query, setQuery] = useState("");
+  const [checkResults, setCheckResults] = useState<
+    Record<string, EnvfileCheckResult[]>
+  >({});
 
   useEffect(() => {
     if (!project) {
@@ -212,6 +216,47 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
     [project, reloadProject, success, error, info],
   );
 
+  const handleCheckEnvfile = useCallback(
+    async (envfile: EnvFile) => {
+      if (!project) return;
+
+      const dir = envfile.path.replace(/[/\\][^/\\]+$/, "");
+      const targets = projectFolders(project)
+        .flatMap((folder) => folder.envFiles)
+        .filter(
+          (file) =>
+            file.type === "env" &&
+            file.path.replace(/[/\\][^/\\]+$/, "") === dir,
+        )
+        .map((file) => file.name);
+
+      setIsProcessing(envfile.id);
+      try {
+        const results: EnvfileCheckResult[] = [];
+        for (const target of targets.length ? targets : [null]) {
+          results.push(
+            await invoke<EnvfileCheckResult>("check_envfile", {
+              envfilePath: envfile.path,
+              envFile: target,
+            }),
+          );
+        }
+        setCheckResults((prev) => ({ ...prev, [envfile.id]: results }));
+        const failed = results.filter((result) => !result.valid).length;
+        if (failed) {
+          error(`${failed} of ${results.length} env file(s) failed the Envfile check`);
+        } else {
+          success(`All ${results.length} env file(s) match the Envfile`);
+        }
+      } catch (err) {
+        error(`Failed to check ${envfile.name}: ${String(err)}`);
+      } finally {
+        setIsProcessing(null);
+      }
+    },
+    [project, success, error],
+  );
+
   if (!project) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-8 text-center">
@@ -307,19 +352,25 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                       {envFile.environment && (
                         <Badge variant="outline">{envFile.environment}</Badge>
                       )}
-                      <Badge
-                        variant={envFile.isEncrypted ? "default" : "secondary"}
-                      >
-                        {envFile.isEncrypted ? (
-                          <>
-                            <Lock className="size-3" /> Encrypted
-                          </>
-                        ) : (
-                          <>
-                            <Unlock className="size-3" /> Plaintext
-                          </>
-                        )}
-                      </Badge>
+                      {envFile.type === "envfile" ? (
+                        <Badge variant="outline">
+                          <ShieldCheck className="size-3" /> Envfile schema
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant={envFile.isEncrypted ? "default" : "secondary"}
+                        >
+                          {envFile.isEncrypted ? (
+                            <>
+                              <Lock className="size-3" /> Encrypted
+                            </>
+                          ) : (
+                            <>
+                              <Unlock className="size-3" /> Plaintext
+                            </>
+                          )}
+                        </Badge>
+                      )}
                       {envFile.type === "example" && (
                         <Badge variant="outline">
                           <Info className="size-3" /> Example
@@ -345,7 +396,18 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                     )}
                   </div>
 
-                  {envFile.type !== "example" && envFile.type !== "keys" && (
+                  {envFile.type === "envfile" && (
+                    <Button
+                      onClick={() => handleCheckEnvfile(envFile)}
+                      disabled={isProcessing !== null}
+                      size="sm"
+                    >
+                      <ShieldCheck className="size-4" />
+                      {isProcessing === envFile.id ? "Checking…" : "Check"}
+                    </Button>
+                  )}
+
+                  {envFile.type === "env" && (
                     <div className="flex flex-wrap gap-2">
                       {envFile.isEncrypted ? (
                         <Button
@@ -410,7 +472,66 @@ export const EnvFileViewer: React.FC<EnvFileViewerProps> = ({
                   </div>
                 )}
 
-                {envFile.type === "keys" ? (
+                {envFile.type === "envfile" ? (
+                  <div className="space-y-4">
+                    {(checkResults[envFile.id] ?? []).map((result) => (
+                      <Alert
+                        key={result.env_file ?? "default"}
+                        variant={result.valid ? "default" : "destructive"}
+                      >
+                        {result.valid ? <Check /> : <AlertTriangle />}
+                        <AlertDescription>
+                          <span className="font-medium text-foreground">
+                            {result.env_file ?? "default env files"}
+                            {" · "}
+                            {result.valid ? "valid" : "invalid"}
+                          </span>
+                          {result.output && (
+                            <pre className="mt-1 font-mono text-xs whitespace-pre-wrap">
+                              {result.output}
+                            </pre>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    ))}
+
+                    <div className="overflow-hidden rounded-xl border bg-card">
+                      <div className="border-b px-3 py-2 text-xs text-muted-foreground">
+                        {envFile.variables.length} rules
+                      </div>
+                      {envFile.variables.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-sm text-muted-foreground italic">
+                          No `env` rules found in this Envfile.
+                        </p>
+                      ) : (
+                        <div className="divide-y">
+                          {envFile.variables.map((rule, index) => (
+                            <div
+                              key={`${rule.key}-${index}`}
+                              className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3 px-3 py-2"
+                            >
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate font-mono text-[13px] font-medium">
+                                  {rule.key}
+                                </span>
+                                {rule.isEncrypted && (
+                                  <Lock className="size-3 shrink-0 text-primary" />
+                                )}
+                              </div>
+                              <span className="truncate font-mono text-xs text-muted-foreground">
+                                {rule.value}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <pre className="max-h-[min(24rem,calc(100vh-26rem))] overflow-auto rounded-xl border bg-muted/20 p-4 font-mono text-[13px] leading-6 whitespace-pre">
+                      {envFile.content}
+                    </pre>
+                  </div>
+                ) : envFile.type === "keys" ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Key className="size-4 text-muted-foreground" />
