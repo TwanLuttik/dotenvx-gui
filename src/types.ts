@@ -48,10 +48,11 @@ export interface EnvFile {
   id: string;
   name: string;
   path: string;
-  type: 'env' | 'keys' | 'example';
+  type: 'env' | 'keys' | 'example' | 'envfile';
   environment?: string; // e.g., 'development', 'production', 'staging'
   isEncrypted: boolean;
   variables: EnvVariable[];
+  content?: string; // Raw source, kept for `Envfile` schemas
   lastModified: string;
   missingKeys?: string[]; // Keys that exist in .env.example but missing in this file
   extraKeys?: string[]; // Keys that exist in this file but not in .env.example
@@ -61,6 +62,12 @@ export interface EnvVariable {
   key: string;
   value: string;
   isEncrypted: boolean;
+}
+
+export interface EnvfileCheckResult {
+  env_file: string | null;
+  valid: boolean;
+  output: string;
 }
 
 export interface AppState {

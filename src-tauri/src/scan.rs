@@ -35,7 +35,7 @@ fn should_skip_dir(name: &str) -> bool {
 }
 
 fn is_env_filename(name: &str) -> bool {
-    name.starts_with(".env") && !name.ends_with(".db")
+    (name.starts_with(".env") && !name.ends_with(".db")) || name == "Envfile"
 }
 
 pub fn collect_env_files(root: &Path) -> Result<Vec<EnvFileHit>, String> {
@@ -166,6 +166,22 @@ mod tests {
         assert!(hits.iter().any(|hit| hit.name == ".env" && hit.directory == root.to_string_lossy()));
         assert!(hits.iter().any(|hit| hit.name == ".env.local"));
         assert!(!hits.iter().any(|hit| hit.name.ends_with(".db")));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn includes_envfile_schema() {
+        let root = temp_workspace();
+        write_file(&root.join("Envfile"), "strict true\n");
+        write_file(&root.join(".env"), "A=1\n");
+        write_file(&root.join("envfile.txt"), "nope\n");
+
+        let hits = collect_env_files(&root).unwrap();
+        let names: Vec<_> = hits.iter().map(|hit| hit.name.as_str()).collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"Envfile"));
+        assert!(names.contains(&".env"));
 
         let _ = fs::remove_dir_all(root);
     }

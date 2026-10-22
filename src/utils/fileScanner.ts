@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { EnvFile, EnvVariable, ProjectFolder } from "../types";
+import { parseEnvfileRules } from "../lib/envfile";
 
 interface EnvFileHit {
   directory: string;
@@ -17,16 +18,30 @@ export class FileScanner {
 
     for (const hit of hits) {
       const content = await this.readFile(hit.path);
-      const envFile: EnvFile = {
-        id: hit.path,
-        name: hit.name,
-        path: hit.path,
-        type: this.getFileType(hit.name),
-        environment: this.getEnvironment(hit.name),
-        isEncrypted: this.detectEncryption(content),
-        variables: this.parseEnvContent(content),
-        lastModified: new Date().toISOString(),
-      };
+      const type = this.getFileType(hit.name);
+      const envFile: EnvFile =
+        type === "envfile"
+          ? {
+              id: hit.path,
+              name: hit.name,
+              path: hit.path,
+              type,
+              environment: "schema",
+              isEncrypted: false,
+              variables: parseEnvfileRules(content),
+              content,
+              lastModified: new Date().toISOString(),
+            }
+          : {
+              id: hit.path,
+              name: hit.name,
+              path: hit.path,
+              type,
+              environment: this.getEnvironment(hit.name),
+              isEncrypted: this.detectEncryption(content),
+              variables: this.parseEnvContent(content),
+              lastModified: new Date().toISOString(),
+            };
 
       const existing = filesByDirectory.get(hit.directory) ?? [];
       existing.push(envFile);
@@ -51,7 +66,10 @@ export class FileScanner {
     return folders.flatMap((folder) => folder.envFiles);
   }
 
-  private static getFileType(fileName: string): "env" | "keys" | "example" {
+  private static getFileType(fileName: string): EnvFile["type"] {
+    if (fileName === "Envfile") {
+      return "envfile";
+    }
     if (fileName.includes(".keys")) {
       return "keys";
     }
@@ -94,8 +112,8 @@ export class FileScanner {
     const exampleKeys = new Set(exampleFile.variables.map((v) => v.key));
 
     return envFiles.map((file) => {
-      if (file.type === "example" || file.type === "keys") {
-        return file; // Skip validation for example and keys files
+      if (file.type !== "env") {
+        return file; // Skip validation for example, keys and Envfile files
       }
 
       const fileKeys = new Set(file.variables.map((v) => v.key));
